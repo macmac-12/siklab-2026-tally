@@ -34,17 +34,57 @@ export function isEgame(event: string) {
   return norm.includes("e-game") || norm.includes("egame") || norm.includes("codm") || norm.includes("mlbb");
 }
 
-export function normalizeTime(t: string) {
+export function normalizeTime(t: string): string {
   if (!t) return "";
-  const s = t.trim().toLowerCase().replace(/\s+/g, "");
-  const m = s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
-  if (m) {
-    const hh = m[1].padStart(2, "0");
-    const mm = m[2];
-    const ampm = m[3] || "";
-    return `${hh}:${mm}${ampm}`;
+  const s = t.trim();
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = (match[3] || "").toUpperCase();
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, "0")}:${minutes}`;
   }
-  return s;
+  return s.replace(/\s+/g, "").toLowerCase();
+}
+
+export function formatDisplayTime(timeStr: string): string {
+  if (!timeStr) return "";
+  const s = timeStr.trim();
+  const ampmMatch = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const hh = ampmMatch[1].padStart(2, "0");
+    const mm = ampmMatch[2];
+    const ampm = ampmMatch[3].toUpperCase();
+    return `${hh}:${mm} ${ampm}`;
+  }
+  const match24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    let hours = parseInt(match24[1], 10);
+    const minutes = match24[2];
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return `${hours.toString().padStart(2, "0")}:${minutes} ${ampm}`;
+  }
+  return timeStr;
+}
+
+export function toTimeInputValue(timeStr: string): string {
+  if (!timeStr) return "09:00";
+  const s = timeStr.trim();
+  if (/^\d{2}:\d{2}$/.test(s)) return s;
+  if (/^\d{1}:\d{2}$/.test(s)) return `0${s}`;
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = (match[3] || "").toUpperCase();
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, "0")}:${minutes}`;
+  }
+  return "09:00";
 }
 
 export function normalizeVenue(v: string) {
@@ -223,7 +263,7 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
 
                 <div className="sched-meta">
                   <span>📅 {formatDate(s.date)}</span>
-                  <span>⏰ {s.time}</span>
+                  <span>⏰ {formatDisplayTime(s.time)}</span>
                   <span>📍 {s.venue}</span>
                 </div>
               </article>
@@ -274,7 +314,7 @@ export function ScheduleManager({
   const [teamA, setTeamA] = useState<string>("CEA");
   const [teamB, setTeamB] = useState<string>("CAS");
   const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState<string>("09:00 AM");
+  const [time, setTime] = useState<string>("09:00");
   const [venue, setVenue] = useState<string>("CSPC Gymnasium");
 
   const [eventFilter, setEventFilter] = useState("all");
@@ -294,7 +334,7 @@ export function ScheduleManager({
     }
     if (conflict) {
       alert(
-        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
       );
       return;
     }
@@ -306,7 +346,7 @@ export function ScheduleManager({
       teamA,
       teamB,
       date,
-      time,
+      time: formatDisplayTime(time),
       venue,
     });
   };
@@ -442,10 +482,9 @@ export function ScheduleManager({
             <label>
               Game Time
               <input
-                type="text"
+                type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                placeholder="e.g. 09:00 AM"
                 required
               />
             </label>
@@ -481,7 +520,7 @@ export function ScheduleManager({
               <span style={{ fontSize: 18 }}>⚠️</span>
               <div>
                 <b>Venue Conflict Detected:</b> &quot;{conflict.venue}&quot; is already booked on{" "}
-                {formatDate(conflict.date)} at {conflict.time} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+                {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
                 <div style={{ marginTop: 2, fontSize: 12, color: "#b91c1c" }}>
                   Only 1 event per venue is allowed at the same time (except for E-Games). Please choose a different venue or time.
                 </div>
@@ -578,7 +617,7 @@ export function ScheduleManager({
                       </td>
                       <td>
                         <div>{formatDate(s.date)}</div>
-                        <small style={{ color: "var(--muted)" }}>{s.time}</small>
+                        <small style={{ color: "var(--muted)" }}>{formatDisplayTime(s.time)}</small>
                       </td>
                       <td>
                         <div>{s.venue}</div>
@@ -860,7 +899,7 @@ export function EditScheduleModal({
   const [teamA, setTeamA] = useState(schedule.teamA);
   const [teamB, setTeamB] = useState(schedule.teamB);
   const [date, setDate] = useState(schedule.date);
-  const [time, setTime] = useState(schedule.time);
+  const [time, setTime] = useState(() => toTimeInputValue(schedule.time));
   const [venue, setVenue] = useState(schedule.venue);
   const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status);
 
@@ -878,7 +917,7 @@ export function EditScheduleModal({
     }
     if (conflict) {
       alert(
-        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
       );
       return;
     }
@@ -890,7 +929,7 @@ export function EditScheduleModal({
       teamA,
       teamB,
       date,
-      time,
+      time: formatDisplayTime(time),
       venue,
       status,
     });
@@ -968,8 +1007,8 @@ export function EditScheduleModal({
           </label>
 
           <label>
-            Time
-            <input type="text" value={time} onChange={(e) => setTime(e.target.value)} required />
+            Game Time
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
           </label>
 
           <label>
@@ -1000,7 +1039,7 @@ export function EditScheduleModal({
               fontSize: 13,
             }}
           >
-            ⚠️ <b>Venue Conflict:</b> &quot;{conflict.venue}&quot; is already booked on {formatDate(conflict.date)} at {conflict.time} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+            ⚠️ <b>Venue Conflict:</b> &quot;{conflict.venue}&quot; is already booked on {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
           </div>
         )}
 

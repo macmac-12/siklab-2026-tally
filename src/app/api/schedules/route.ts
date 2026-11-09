@@ -8,17 +8,40 @@ function isEgame(event: string) {
   return norm.includes("e-game") || norm.includes("egame") || norm.includes("codm") || norm.includes("mlbb");
 }
 
-function normalizeTime(t: string) {
-  if (!t) return "";
-  const s = t.trim().toLowerCase().replace(/\s+/g, "");
-  const m = s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
-  if (m) {
-    const hh = m[1].padStart(2, "0");
-    const mm = m[2];
-    const ampm = m[3] || "";
-    return `${hh}:${mm}${ampm}`;
+function formatDisplayTime(timeStr: string): string {
+  if (!timeStr) return "";
+  const s = timeStr.trim();
+  const ampmMatch = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const hh = ampmMatch[1].padStart(2, "0");
+    const mm = ampmMatch[2];
+    const ampm = ampmMatch[3].toUpperCase();
+    return `${hh}:${mm} ${ampm}`;
   }
-  return s;
+  const match24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    let hours = parseInt(match24[1], 10);
+    const minutes = match24[2];
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return `${hours.toString().padStart(2, "0")}:${minutes} ${ampm}`;
+  }
+  return timeStr;
+}
+
+function normalizeTime(t: string): string {
+  if (!t) return "";
+  const s = t.trim();
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = (match[3] || "").toUpperCase();
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, "0")}:${minutes}`;
+  }
+  return s.replace(/\s+/g, "").toLowerCase();
 }
 
 function normalizeVenue(v: string) {
@@ -73,7 +96,7 @@ export async function POST(request: Request) {
   const conflict = findVenueConflict(existingSchedules, {
     event: String(body.event).trim(),
     date: String(body.date).trim(),
-    time: String(body.time).trim(),
+    time: formatDisplayTime(String(body.time).trim()),
     venue,
   });
 
@@ -95,7 +118,7 @@ export async function POST(request: Request) {
     teamA: String(body.teamA).trim(),
     teamB: String(body.teamB).trim(),
     date: String(body.date).trim(),
-    time: String(body.time).trim(),
+    time: formatDisplayTime(String(body.time).trim()),
     venue,
     status: (body.status as GameSchedule["status"]) || "Upcoming",
     winner: body.winner ? String(body.winner).trim() : undefined,
@@ -132,7 +155,7 @@ export async function PATCH(request: Request) {
   // If time, date, venue, or event changed, verify there's no conflict
   const targetEvent = body.event !== undefined ? String(body.event).trim() : currentItem.event;
   const targetDate = body.date !== undefined ? String(body.date).trim() : currentItem.date;
-  const targetTime = body.time !== undefined ? String(body.time).trim() : currentItem.time;
+  const targetTime = body.time !== undefined ? formatDisplayTime(String(body.time).trim()) : currentItem.time;
   const targetVenue = body.venue !== undefined ? String(body.venue).trim() : currentItem.venue;
 
   const conflict = findVenueConflict(existingSchedules, {
@@ -166,7 +189,7 @@ export async function PATCH(request: Request) {
     if (body.teamA !== undefined) item.teamA = String(body.teamA).trim();
     if (body.teamB !== undefined) item.teamB = String(body.teamB).trim();
     if (body.date !== undefined) item.date = String(body.date).trim();
-    if (body.time !== undefined) item.time = String(body.time).trim();
+    if (body.time !== undefined) item.time = formatDisplayTime(String(body.time).trim());
     if (body.venue !== undefined) item.venue = String(body.venue).trim();
     if (body.status !== undefined) item.status = body.status;
     if (body.winner !== undefined) item.winner = body.winner ? String(body.winner).trim() : undefined;
