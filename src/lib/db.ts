@@ -10,9 +10,16 @@ const bundledDir = path.join(process.cwd(), "data");
 
 const getDataRoot = () => {
   if (process.env.DATA_ROOT) return process.env.DATA_ROOT;
-  if (process.env.NODE_ENV !== "production") return bundledDir;
-  // Production (e.g., Vercel) – use OS temporary directory which is writable
-  return path.join(os.tmpdir(), "siklab-data");
+  // Always use writable OS temp directory in serverless environments (Vercel, AWS Lambda) or production
+  if (
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.NODE_ENV === "production" ||
+    process.cwd().startsWith("/var/task")
+  ) {
+    return path.join(os.tmpdir(), "siklab-data");
+  }
+  return bundledDir;
 };
 
 const dataDir = getDataRoot();
@@ -86,6 +93,11 @@ async function readJson<T>(file: string, fallbackFile?: string): Promise<T | und
 }
 
 async function writeJson(file: string, value: unknown) {
+  try {
+    await mkdir(path.dirname(file), { recursive: true });
+  } catch {
+    // ignore directory creation error if already exists
+  }
   await writeFile(file, JSON.stringify(value, null, 2));
 }
 
@@ -119,7 +131,7 @@ async function loadDb(): Promise<Database> {
   try {
     await mkdir(dataDir, { recursive: true });
   } catch {
-    // ignore if already exists or fails
+    // ignore
   }
 
   const storedUsers = await readJson<unknown>(usersFile, path.join(bundledDir, "users.json"));
