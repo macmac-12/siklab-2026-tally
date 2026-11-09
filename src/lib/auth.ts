@@ -4,15 +4,19 @@ import { cookies } from "next/headers";
 import { readDb } from "@/lib/db";
 import type { Role } from "@/lib/types";
 
-const cookieName = "siklab_session";
+export const cookieName = "siklab_session";
 
 function secret() {
   const value = process.env.SESSION_SECRET || process.env.SUPERADMIN_PASSWORD || "siklab-session-secret-key-prod-2026-secure-32";
   return new TextEncoder().encode(value);
 }
 
-export async function createSession(userId: string) {
-  return new SignJWT({ sub: userId })
+export async function createSession(user: { id: string; role?: Role; email?: string; name?: string } | string) {
+  const payload = typeof user === "string"
+    ? { sub: user }
+    : { sub: user.id, role: user.role, email: user.email, name: user.name };
+
+  return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("8h")
@@ -20,17 +24,25 @@ export async function createSession(userId: string) {
 }
 
 export async function setSession(token: string) {
-  (await cookies()).set(cookieName, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
+  try {
+    (await cookies()).set(cookieName, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 8,
+    });
+  } catch {
+    // If running in a context where cookies() cannot be mutated, ignore
+  }
 }
 
 export async function clearSession() {
-  (await cookies()).delete(cookieName);
+  try {
+    (await cookies()).delete(cookieName);
+  } catch {
+    // ignore
+  }
 }
 
 export async function getUser() {
@@ -38,6 +50,14 @@ export async function getUser() {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
+    if (payload.sub && payload.role) {
+      return {
+        id: String(payload.sub),
+        name: String(payload.name || "User"),
+        email: String(payload.email || ""),
+        role: payload.role as Role,
+      };
+    }
     const db = await readDb();
     const user = db.users.find((item) => item.id === payload.sub);
     if (!user) return null;

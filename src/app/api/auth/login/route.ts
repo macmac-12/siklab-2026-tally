@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { createSession, setSession } from "@/lib/auth";
+import { cookieName, createSession, setSession } from "@/lib/auth";
 import { readDb } from "@/lib/db";
 
 export async function POST(request: Request) {
@@ -28,6 +28,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
   }
 
-  await setSession(await createSession(user.id));
-  return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  const token = await createSession({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
+
+  await setSession(token);
+
+  const response = NextResponse.json({
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+  });
+
+  response.cookies.set(cookieName, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
+
+  return response;
 }
