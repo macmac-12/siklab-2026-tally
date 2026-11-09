@@ -69,17 +69,30 @@ async function writeJson(file: string, value: unknown) {
   await writeFile(file, JSON.stringify(value, null, 2));
 }
 
-async function ensureSuperadmin(users: Database["users"]) {
-  const email = process.env.SUPERADMIN_EMAIL ?? "admin@siklab.test";
-  const password = process.env.SUPERADMIN_PASSWORD ?? "change-this-before-deployment";
-  users.push({
-    id: crypto.randomUUID(),
-    name: "Superadmin",
-    email,
-    role: "superadmin",
-    passwordHash: await bcrypt.hash(password, 12),
-    createdAt: new Date().toISOString(),
-  });
+async function syncSuperadmin(users: Database["users"]): Promise<boolean> {
+  const email = (process.env.SUPERADMIN_EMAIL ?? "admin@siklab.test").trim().toLowerCase();
+  const password = process.env.SUPERADMIN_PASSWORD ?? "SIKLAB2k26";
+  const superadmin = users.find((item) => item.role === "superadmin");
+  if (!superadmin) {
+    users.push({
+      id: crypto.randomUUID(),
+      name: "Superadmin",
+      email: process.env.SUPERADMIN_EMAIL ?? "admin@siklab.test",
+      role: "superadmin",
+      passwordHash: await bcrypt.hash(password, 12),
+      createdAt: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  const emailDiffers = superadmin.email.toLowerCase() !== email;
+  const passwordMatches = await bcrypt.compare(password, superadmin.passwordHash);
+  if (emailDiffers || !passwordMatches) {
+    superadmin.email = process.env.SUPERADMIN_EMAIL ?? superadmin.email;
+    superadmin.passwordHash = await bcrypt.hash(password, 12);
+    return true;
+  }
+  return false;
 }
 
 async function loadDb(): Promise<Database> {
@@ -98,8 +111,9 @@ async function loadDb(): Promise<Database> {
 
   const users = (Array.isArray(storedUsers) ? storedUsers : Array.isArray(legacy?.users) ? legacy.users : [])
     .filter(isAccount);
-  if (users.length === 0) await ensureSuperadmin(users);
+  const superadminUpdated = await syncSuperadmin(users);
   const usersNeedWrite = storedUsers === undefined || !Array.isArray(storedUsers)
+    || superadminUpdated
     || JSON.stringify(users) !== JSON.stringify(storedUsers);
 
   const rulesSource = storedRulesData ?? legacy;
