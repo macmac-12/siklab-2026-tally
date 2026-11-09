@@ -148,8 +148,11 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
       if (dateFilter !== "all" && s.date !== dateFilter) return false;
       if (venueFilter !== "all" && s.venue.trim().toLowerCase() !== venueFilter.trim().toLowerCase()) return false;
       if (collegeFilter !== "all") {
-        const isAll = s.isAllColleges || s.teamA === "All Colleges";
+        const isAll = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event, s.detail);
         if (!isAll && s.teamA !== collegeFilter && s.teamB !== collegeFilter && s.winner !== collegeFilter) {
+          return false;
+        }
+        if (isAll && s.status === "Completed" && s.winner !== collegeFilter && s.runnerUp !== collegeFilter && s.secondRunnerUp !== collegeFilter) {
           return false;
         }
       }
@@ -241,7 +244,7 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
       {sorted.length > 0 ? (
         <div className="schedule-grid">
           {sorted.map((s) => {
-            const isAllColleges = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event);
+            const isAllColleges = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event, s.detail);
             const colA = findCollege(s.teamA);
             const colB = findCollege(s.teamB);
             const isCompleted = s.status === "Completed";
@@ -274,27 +277,46 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
                       <span style={{ fontWeight: 700, fontSize: 12, color: "var(--foreground)" }}>
                         👥 All 7 Colleges Competing
                       </span>
-                      {isCompleted && s.winner && s.winner !== "Draw" && (
+                      {isCompleted && s.winner && s.winner !== "Draw" && !s.runnerUp && !s.secondRunnerUp && (
                         <span className="winner-tag">🏆 {s.winner} Won</span>
                       )}
                       {isDraw && (
                         <span className="draw-tag">🤝 Joint Winners / Draw</span>
                       )}
                     </div>
+                    {isCompleted && s.winner && s.winner !== "Draw" && (s.runnerUp || s.secondRunnerUp) && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        <span style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+                          🥇 Champion: {findCollege(s.winner)?.name || s.winner}
+                        </span>
+                        {s.runnerUp && (
+                          <span style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#475569", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
+                            🥈 2nd: {findCollege(s.runnerUp)?.name || s.runnerUp}
+                          </span>
+                        )}
+                        {s.secondRunnerUp && (
+                          <span style={{ background: "#ffedd5", border: "1px solid #fed7aa", color: "#9a3412", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
+                            🥉 3rd: {findCollege(s.secondRunnerUp)?.name || s.secondRunnerUp}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                       {colleges.map((c) => {
                         const isWinner = isCompleted && s.winner === c.id;
+                        const is2nd = isCompleted && s.runnerUp === c.id;
+                        const is3rd = isCompleted && s.secondRunnerUp === c.id;
                         return (
                           <span
                             key={c.id}
                             className="college-badge"
                             style={{
                               background: c.color,
-                              outline: isWinner ? "2px solid #10b981" : "none",
-                              fontWeight: isWinner ? 800 : 600,
+                              outline: isWinner ? "2px solid #eab308" : is2nd ? "2px solid #94a3b8" : is3rd ? "2px solid #f97316" : "none",
+                              fontWeight: isWinner || is2nd || is3rd ? 800 : 600,
                             }}
                           >
-                            {c.id} {isWinner ? "🏆" : ""}
+                            {c.id} {isWinner ? "🥇" : is2nd ? "🥈" : is3rd ? "🥉" : ""}
                           </span>
                         );
                       })}
@@ -416,7 +438,7 @@ export function ScheduleManager({
   const [venueFilter, setVenueFilter] = useState("all");
   const [teamFilter, setTeamFilter] = useState("all");
 
-  const isAllColleges = isAllCollegesEvent(event);
+  const isAllColleges = isAllCollegesEvent(event, detail);
   const eventCategories = getCategoriesForEvent(event);
   const eventRounds = getRoundOptionsForEvent(event);
 
@@ -482,8 +504,11 @@ export function ScheduleManager({
       if (dateFilter !== "all" && s.date !== dateFilter) return false;
       if (venueFilter !== "all" && s.venue.trim().toLowerCase() !== venueFilter.trim().toLowerCase()) return false;
       if (teamFilter !== "all") {
-        const isAll = s.isAllColleges || s.teamA === "All Colleges";
+        const isAll = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event, s.detail);
         if (!isAll && s.teamA !== teamFilter && s.teamB !== teamFilter && s.winner !== teamFilter) {
+          return false;
+        }
+        if (isAll && s.status === "Completed" && s.winner !== teamFilter && s.runnerUp !== teamFilter && s.secondRunnerUp !== teamFilter) {
           return false;
         }
       }
@@ -584,31 +609,7 @@ export function ScheduleManager({
               </select>
             </label>
 
-            {isAllColleges ? (
-              <div
-                style={{
-                  gridColumn: "span 2",
-                  padding: "12px 16px",
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
-                  borderRadius: 10,
-                }}
-              >
-                <div style={{ fontWeight: 700, color: "#166534", fontSize: 13, marginBottom: 2 }}>
-                  👥 All 7 Colleges Participate Together
-                </div>
-                <div style={{ fontSize: 12, color: "#15803d" }}>
-                  This event is contested simultaneously by all colleges (no dual Team A vs Team B matchup needed).
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                  {colleges.map((c) => (
-                    <span key={c.id} className="college-badge" style={{ background: c.color, fontSize: 11 }}>
-                      {c.id} · {c.name.split(" ")[0]}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
+            {!isAllColleges && (
               <>
                 <label>
                   Team A (Home)
@@ -780,7 +781,7 @@ export function ScheduleManager({
             <tbody>
               {filtered.length ? (
                 [...filtered].reverse().map((s) => {
-                  const isAll = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event);
+                  const isAll = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event, s.detail);
                   const colA = findCollege(s.teamA);
                   const colB = findCollege(s.teamB);
                   const hasConflict = findVenueConflict(schedules, {
@@ -857,9 +858,27 @@ export function ScheduleManager({
                             {s.winner === "Draw" ? (
                               <span style={{ fontWeight: 700, color: "var(--muted)" }}>Draw / Tie</span>
                             ) : s.winner ? (
-                              <span className="winner-tag">
-                                🏆 {s.winner} Won
-                              </span>
+                              isAll || s.runnerUp || s.secondRunnerUp ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                  <span style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e", padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, display: "inline-block" }}>
+                                    🥇 {s.winner}
+                                  </span>
+                                  {s.runnerUp && (
+                                    <span style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#475569", padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, display: "inline-block" }}>
+                                      🥈 {s.runnerUp}
+                                    </span>
+                                  )}
+                                  {s.secondRunnerUp && (
+                                    <span style={{ background: "#ffedd5", border: "1px solid #fed7aa", color: "#9a3412", padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, display: "inline-block" }}>
+                                      🥉 {s.secondRunnerUp}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="winner-tag">
+                                  🏆 {s.winner} Won
+                                </span>
+                              )
                             ) : (
                               <span style={{ color: "var(--muted)" }}>Completed</span>
                             )}
@@ -934,8 +953,15 @@ export function RecordResultModal({
   onClose: () => void;
   onSave: (updates: Partial<GameSchedule>) => void;
 }) {
-  const isAllColleges = schedule.isAllColleges || schedule.teamA === "All Colleges" || isAllCollegesEvent(schedule.event);
+  const isMultiPlacer =
+    schedule.isAllColleges ||
+    schedule.teamA === "All Colleges" ||
+    isAllCollegesEvent(schedule.event, schedule.detail) ||
+    (schedule.event === "Arnis" && schedule.detail?.toLowerCase().includes("anyo"));
+
   const [winner, setWinner] = useState<string>(schedule.winner || "");
+  const [runnerUp, setRunnerUp] = useState<string>(schedule.runnerUp || "");
+  const [secondRunnerUp, setSecondRunnerUp] = useState<string>(schedule.secondRunnerUp || "");
   const [scoreA, setScoreA] = useState<string>(schedule.scoreA || "");
   const [scoreB, setScoreB] = useState<string>(schedule.scoreB || "");
   const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status || "Completed");
@@ -950,12 +976,32 @@ export function RecordResultModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      winner: winner || undefined,
-      scoreA: !isAllColleges && scoreA.trim() ? scoreA.trim() : undefined,
-      scoreB: !isAllColleges && scoreB.trim() ? scoreB.trim() : undefined,
-      status,
-    });
+    if (isMultiPlacer) {
+      const placements = [];
+      if (winner && winner !== "Draw") {
+        placements.push({ place: "Champion", collegeId: winner });
+      }
+      if (runnerUp) {
+        placements.push({ place: "1st Runner-Up", collegeId: runnerUp });
+      }
+      if (secondRunnerUp) {
+        placements.push({ place: "2nd Runner-Up", collegeId: secondRunnerUp });
+      }
+      onSave({
+        winner: winner || undefined,
+        runnerUp: runnerUp || undefined,
+        secondRunnerUp: secondRunnerUp || undefined,
+        placements: placements.length > 0 ? placements : undefined,
+        status,
+      });
+    } else {
+      onSave({
+        winner: winner || undefined,
+        scoreA: scoreA.trim() || undefined,
+        scoreB: scoreB.trim() || undefined,
+        status,
+      });
+    }
   };
 
   return (
@@ -963,7 +1009,7 @@ export function RecordResultModal({
       <form className="modal modal-result" onSubmit={handleSubmit}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
           <div>
-            <h2>Record Match Result &amp; Winner</h2>
+            <h2>Record Match Result &amp; Placers</h2>
             <p>
               <b>{schedule.event}</b> · {schedule.category} · {schedule.round}
               {schedule.detail ? ` (${schedule.detail})` : ""}
@@ -973,94 +1019,159 @@ export function RecordResultModal({
         </div>
 
         <div style={{ marginTop: 14 }}>
-          <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
-            Who won this event / match?
-          </label>
+          {isMultiPlacer ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding: "10px 14px", background: "#f8fafc", borderRadius: 8, border: "1px solid var(--line)", fontSize: 12, color: "#475569", lineHeight: 1.4 }}>
+                Select the <b>Champion (1st Place)</b>, <b>1st Runner-Up (2nd Placer)</b>, and <b>2nd Runner-Up (3rd Placer)</b> for this event:
+              </div>
 
-          {isAllColleges ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-              {colleges.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={`winner-btn ${winner === c.id ? "selected" : ""}`}
-                  onClick={() => handleSelectWinner(c.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}
+              {/* Champion / 1st Place */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontWeight: 700, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#92400e" }}>
+                  🥇 Champion / 1st Place <span style={{ color: "#ef4444" }}>*</span>
+                </span>
+                <select
+                  value={winner}
+                  onChange={(e) => {
+                    setWinner(e.target.value);
+                    if (e.target.value) setStatus("Completed");
+                  }}
+                  required
+                  style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #fcd34d", background: "#fefce8", font: "600 13px 'Inter'" }}
                 >
-                  <span className="college-badge" style={{ background: c.color }}>{c.id}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{c.name.split(" ")[0]}</span>
-                  {winner === c.id && <span style={{ color: "#10b981", fontWeight: 700, marginLeft: "auto" }}>🏆</span>}
+                  <option value="">-- Select Champion / 1st Place --</option>
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.id} · {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* 1st Runner-Up / 2nd Placer */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontWeight: 700, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#475569" }}>
+                  🥈 1st Runner-Up / 2nd Placer
+                </span>
+                <select
+                  value={runnerUp}
+                  onChange={(e) => setRunnerUp(e.target.value)}
+                  style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#f8fafc", font: "600 13px 'Inter'" }}
+                >
+                  <option value="">-- Select 1st Runner-Up (2nd Placer) --</option>
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id} disabled={c.id === winner}>
+                      {c.id} · {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* 2nd Runner-Up / 3rd Placer */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontWeight: 700, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#9a3412" }}>
+                  🥉 2nd Runner-Up / 3rd Placer
+                </span>
+                <select
+                  value={secondRunnerUp}
+                  onChange={(e) => setSecondRunnerUp(e.target.value)}
+                  style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #fed7aa", background: "#fff7ed", font: "600 13px 'Inter'" }}
+                >
+                  <option value="">-- Select 2nd Runner-Up (3rd Placer) --</option>
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id} disabled={c.id === winner || c.id === runnerUp}>
+                      {c.id} · {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Quick actions */}
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  className={`outline ${winner === "Draw" ? "primary" : ""}`}
+                  style={{ padding: "6px 12px", fontSize: 12 }}
+                  onClick={() => {
+                    setWinner("Draw");
+                    setRunnerUp("");
+                    setSecondRunnerUp("");
+                    setStatus("Completed");
+                  }}
+                >
+                  🤝 Draw / Joint Winner
                 </button>
-              ))}
-              <button
-                type="button"
-                className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
-                onClick={() => handleSelectWinner("Draw")}
-              >
-                <span>🤝 Draw / Joint Winner</span>
-              </button>
-              <button
-                type="button"
-                className={`winner-btn ${!winner ? "selected" : ""}`}
-                onClick={() => {
-                  setWinner("");
-                  setStatus("Upcoming");
-                }}
-              >
-                <span>⏳ Not Decided Yet</span>
-              </button>
+                <button
+                  type="button"
+                  className="outline"
+                  style={{ padding: "6px 12px", fontSize: 12 }}
+                  onClick={() => {
+                    setWinner("");
+                    setRunnerUp("");
+                    setSecondRunnerUp("");
+                    setStatus("Upcoming");
+                  }}
+                >
+                  ⏳ Reset / Not Decided Yet
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="winner-selector">
-              <button
-                type="button"
-                className={`winner-btn ${winner === schedule.teamA ? "selected" : ""}`}
-                onClick={() => handleSelectWinner(schedule.teamA)}
-              >
-                <span className="college-badge" style={{ background: colA?.color }}>
-                  {schedule.teamA}
-                </span>
-                <span>{colA?.name || schedule.teamA}</span>
-                {winner === schedule.teamA && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
-              </button>
+            <div>
+              <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
+                Who won this match?
+              </label>
+              <div className="winner-selector">
+                <button
+                  type="button"
+                  className={`winner-btn ${winner === schedule.teamA ? "selected" : ""}`}
+                  onClick={() => handleSelectWinner(schedule.teamA)}
+                >
+                  <span className="college-badge" style={{ background: colA?.color }}>
+                    {schedule.teamA}
+                  </span>
+                  <span>{colA?.name || schedule.teamA}</span>
+                  {winner === schedule.teamA && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
+                </button>
 
-              <button
-                type="button"
-                className={`winner-btn ${winner === schedule.teamB ? "selected" : ""}`}
-                onClick={() => handleSelectWinner(schedule.teamB)}
-              >
-                <span className="college-badge" style={{ background: colB?.color }}>
-                  {schedule.teamB}
-                </span>
-                <span>{colB?.name || schedule.teamB}</span>
-                {winner === schedule.teamB && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
-              </button>
+                <button
+                  type="button"
+                  className={`winner-btn ${winner === schedule.teamB ? "selected" : ""}`}
+                  onClick={() => handleSelectWinner(schedule.teamB)}
+                >
+                  <span className="college-badge" style={{ background: colB?.color }}>
+                    {schedule.teamB}
+                  </span>
+                  <span>{colB?.name || schedule.teamB}</span>
+                  {winner === schedule.teamB && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
+                </button>
 
-              <button
-                type="button"
-                className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
-                onClick={() => handleSelectWinner("Draw")}
-                style={{ gridColumn: "span 1" }}
-              >
-                <span>🤝 Draw / Tie</span>
-              </button>
+                <button
+                  type="button"
+                  className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
+                  onClick={() => handleSelectWinner("Draw")}
+                  style={{ gridColumn: "span 1" }}
+                >
+                  <span>🤝 Draw / Tie</span>
+                </button>
 
-              <button
-                type="button"
-                className={`winner-btn ${!winner ? "selected" : ""}`}
-                onClick={() => {
-                  setWinner("");
-                  setStatus("Upcoming");
-                }}
-                style={{ gridColumn: "span 1" }}
-              >
-                <span>⏳ Not Played Yet</span>
-              </button>
+                <button
+                  type="button"
+                  className={`winner-btn ${!winner ? "selected" : ""}`}
+                  onClick={() => {
+                    setWinner("");
+                    setStatus("Upcoming");
+                  }}
+                  style={{ gridColumn: "span 1" }}
+                >
+                  <span>⏳ Not Played Yet</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {!isAllColleges && (
+        {!isMultiPlacer && (
           <div style={{ marginTop: 14 }}>
             <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
               Scores (Optional)
@@ -1108,7 +1219,7 @@ export function RecordResultModal({
         </div>
 
         <div style={{ marginTop: 12, padding: "8px 12px", background: "#f8fafc", borderRadius: 8, fontSize: 12, color: "#64748b" }}>
-          💡 <b>Notice:</b> This records the game match result for the tournament schedule. To officially tally tournament points, submit event results in the <b>Submissions</b> tab for admin approval.
+          💡 <b>Notice:</b> This records the match result and placers for the tournament schedule. To officially tally tournament points, submit event results in the <b>Submissions</b> tab for admin approval.
         </div>
 
         <div className="modalfoot" style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 18 }}>
@@ -1151,7 +1262,7 @@ export function EditScheduleModal({
   const [venue, setVenue] = useState(schedule.venue);
   const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status);
 
-  const isAllColleges = isAllCollegesEvent(event);
+  const isAllColleges = isAllCollegesEvent(event, detail);
   const eventCategories = getCategoriesForEvent(event);
   const eventRounds = getRoundOptionsForEvent(event);
 
@@ -1248,24 +1359,7 @@ export function EditScheduleModal({
             </select>
           </label>
 
-          {isAllColleges ? (
-            <div
-              style={{
-                gridColumn: "span 2",
-                padding: "10px 14px",
-                background: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                borderRadius: 8,
-              }}
-            >
-              <div style={{ fontWeight: 700, color: "#166534", fontSize: 13 }}>
-                👥 All 7 Colleges Participate Together
-              </div>
-              <div style={{ fontSize: 11, color: "#15803d" }}>
-                This event is contested simultaneously by all colleges.
-              </div>
-            </div>
-          ) : (
+          {!isAllColleges && (
             <>
               <label>
                 Team A

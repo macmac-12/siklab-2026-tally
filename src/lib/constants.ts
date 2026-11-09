@@ -273,8 +273,9 @@ export const culturalAndSpecialEvents = [
 
 export const subPointSports = ["Athletics", "Taekwondo", "Arnis"] as const;
 
-export function isAllCollegesEvent(event: string): boolean {
+export function isAllCollegesEvent(event: string, detail?: string): boolean {
   if (event === "Athletics" || event.startsWith("Athletics —")) return true;
+  if (event === "Arnis" && detail && detail.toLowerCase().includes("anyo")) return true;
   return culturalAndSpecialEvents.some((e) => e === event);
 }
 

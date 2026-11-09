@@ -38,6 +38,9 @@ export type GameSchedule = {
   time: string;
   venue: string;
   winner?: string;
+  runnerUp?: string;
+  secondRunnerUp?: string;
+  placements?: { place: string; collegeId: string }[];
   scoreA?: string;
   scoreB?: string;
   status: "Upcoming" | "Ongoing" | "Completed";

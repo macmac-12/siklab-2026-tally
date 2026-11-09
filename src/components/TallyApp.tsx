@@ -602,6 +602,32 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           )}
         </div>
 
+        {tab === "schedules" && (
+          <div
+            style={{
+              padding: "14px 18px",
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 700, color: "#166534", fontSize: 13, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              👥 All 7 Colleges Participate Together
+            </div>
+            <div style={{ fontSize: 12, color: "#15803d", lineHeight: 1.4 }}>
+              Athletics, Arnis (Anyo), dance, musical, literary, visual arts, and special events are contested simultaneously by all colleges (no dual Team A vs Team B matchup needed). Official placers (Champion, 1st Runner-Up, 2nd Runner-Up) can be recorded per schedule.
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              {colleges.map((c) => (
+                <span key={c.id} className="college-badge" style={{ background: c.color, fontSize: 11 }}>
+                  {c.id} · {c.name.split(" ")[0]}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {tab === "submissions" && (
           isOfficer ? (
             <ScoreEntry rules={rules} onSubmit={submitScore} scores={scores.filter((s) => s.by === user.name)}/>

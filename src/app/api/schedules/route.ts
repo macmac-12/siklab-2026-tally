@@ -131,6 +131,9 @@ export async function POST(request: Request) {
     venue,
     status: (body.status as GameSchedule["status"]) || "Upcoming",
     winner: body.winner ? String(body.winner).trim() : undefined,
+    runnerUp: body.runnerUp ? String(body.runnerUp).trim() : undefined,
+    secondRunnerUp: body.secondRunnerUp ? String(body.secondRunnerUp).trim() : undefined,
+    placements: Array.isArray(body.placements) ? body.placements : undefined,
     scoreA: body.scoreA !== undefined ? String(body.scoreA).trim() : undefined,
     scoreB: body.scoreB !== undefined ? String(body.scoreB).trim() : undefined,
     createdBy: user.name,
@@ -209,6 +212,9 @@ export async function PATCH(request: Request) {
     if (body.venue !== undefined) item.venue = String(body.venue).trim();
     if (body.status !== undefined) item.status = body.status;
     if (body.winner !== undefined) item.winner = body.winner ? String(body.winner).trim() : undefined;
+    if (body.runnerUp !== undefined) item.runnerUp = body.runnerUp ? String(body.runnerUp).trim() : undefined;
+    if (body.secondRunnerUp !== undefined) item.secondRunnerUp = body.secondRunnerUp ? String(body.secondRunnerUp).trim() : undefined;
+    if (body.placements !== undefined) item.placements = Array.isArray(body.placements) ? body.placements : undefined;
     if (body.scoreA !== undefined) item.scoreA = body.scoreA ? String(body.scoreA).trim() : undefined;
     if (body.scoreB !== undefined) item.scoreB = body.scoreB ? String(body.scoreB).trim() : undefined;
     if (body.isAllColleges !== undefined) item.isAllColleges = body.isAllColleges;
