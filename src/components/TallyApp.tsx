@@ -286,7 +286,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
             ) : (
               <>
                 <a className="outline" href="/">Live tally</a>
-                <button className="outline" onClick={() => setLoginOpen(true)}>Officer / Admin sign in</button>
+                <button className="outline" onClick={() => setLoginOpen(true)}>Log In</button>
               </>
             )}
           </>
@@ -301,7 +301,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
             ) : (
               <>
                 <a className="outline" href="/scoreboard">Scoreboard</a>
-                <button className="outline" onClick={() => setLoginOpen(true)}>Officer / Admin sign in</button>
+                <button className="outline" onClick={() => setLoginOpen(true)}>Log In</button>
               </>
             )}
           </>

@@ -14,7 +14,7 @@ button{cursor:pointer}
 .brandname em{font-style:normal;color:var(--accent)}
 .brandname small{display:block;font:500 10px 'Inter';letter-spacing:.08em;color:var(--muted);margin-top:1px;text-transform:uppercase}
 .topbar nav{display:flex;align-items:center;gap:6px}
-.topbar nav button,.outline{background:transparent;color:var(--muted);border:0;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500}
+.topbar nav button,.outline{background:transparent;color:var(--muted);border:0;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500;white-space:nowrap}
 .topbar nav button.active,.topbar nav button:hover{background:var(--accent-light);color:var(--accent-dark)}
 .topbar nav .outline,.outline{border:1px solid var(--line);color:var(--text)}
 .outline:hover{background:var(--panel2)}
