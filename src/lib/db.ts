@@ -1,11 +1,21 @@
 import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import bcrypt from "bcryptjs";
 import { defaultRules } from "@/lib/constants";
 import type { Database } from "@/lib/types";
 
-const dataDir = path.join(process.cwd(), "data");
+const bundledDir = path.join(process.cwd(), "data");
+
+const getDataRoot = () => {
+  if (process.env.DATA_ROOT) return process.env.DATA_ROOT;
+  if (process.env.NODE_ENV !== "production") return bundledDir;
+  // Production (e.g., Vercel) – use OS temporary directory which is writable
+  return path.join(os.tmpdir(), "siklab-data");
+};
+
+const dataDir = getDataRoot();
 const legacyFile = path.join(dataDir, "db.json");
 const usersFile = path.join(dataDir, "users.json");
 const rulesFile = path.join(dataDir, "rules.json");
@@ -56,11 +66,21 @@ function normalizeRules(value: unknown): Database["rules"] {
   }));
 }
 
-async function readJson<T>(file: string): Promise<T | undefined> {
+async function readJson<T>(file: string, fallbackFile?: string): Promise<T | undefined> {
   try {
     return JSON.parse(await readFile(file, "utf8")) as T;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (fallbackFile && fallbackFile !== file) {
+        try {
+          return JSON.parse(await readFile(fallbackFile, "utf8")) as T;
+        } catch (fbError) {
+          if ((fbError as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+          throw fbError;
+        }
+      }
+      return undefined;
+    }
     throw error;
   }
 }
@@ -96,18 +116,22 @@ async function syncSuperadmin(users: Database["users"]): Promise<boolean> {
 }
 
 async function loadDb(): Promise<Database> {
-  await mkdir(dataDir, { recursive: true });
+  try {
+    await mkdir(dataDir, { recursive: true });
+  } catch {
+    // ignore if already exists or fails
+  }
 
-  const storedUsers = await readJson<unknown>(usersFile);
-  const storedRules = await readJson<unknown>(rulesFile);
-  const storedScores = await readJson<unknown>(scoresFile);
-  const storedMetadata = await readJson<unknown>(metadataFile);
+  const storedUsers = await readJson<unknown>(usersFile, path.join(bundledDir, "users.json"));
+  const storedRules = await readJson<unknown>(rulesFile, path.join(bundledDir, "rules.json"));
+  const storedScores = await readJson<unknown>(scoresFile, path.join(bundledDir, "scores.json"));
+  const storedMetadata = await readJson<unknown>(metadataFile, path.join(bundledDir, "metadata.json"));
   const storedRulesData = storedRules && typeof storedRules === "object" ? storedRules as Partial<RulesData> : undefined;
   const storedMetadataData = storedMetadata && typeof storedMetadata === "object"
     ? storedMetadata as Partial<Pick<Database, "updatedAt">>
     : undefined;
   const needsLegacy = storedUsers === undefined || storedRules === undefined || storedScores === undefined;
-  const legacy = needsLegacy ? await readJson<Partial<Database>>(legacyFile) : undefined;
+  const legacy = needsLegacy ? await readJson<Partial<Database>>(legacyFile, path.join(bundledDir, "db.json")) : undefined;
 
   const users = (Array.isArray(storedUsers) ? storedUsers : Array.isArray(legacy?.users) ? legacy.users : [])
     .filter(isAccount);
