@@ -2,7 +2,24 @@
   "name": "siklab-2026-tally",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
-  "dependencies": { "bcryptjs": "^2.4.3", "jose": "^5.9.6", "next": "^15.2.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
-  "devDependencies": { "@types/bcryptjs": "^2.4.6", "@types/node": "^22.13.4", "@types/react": "^19.0.8", "@types/react-dom": "^19.0.3", "typescript": "^5.7.3" }
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.6",
+    "next": "^15.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3"
+  }
 }

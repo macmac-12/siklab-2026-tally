@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import bcrypt from "bcryptjs";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { defaultRules } from "@/lib/constants";
 import type { Database } from "@/lib/types";
 
@@ -10,7 +11,6 @@ const bundledDir = path.join(process.cwd(), "data");
 
 const getDataRoot = () => {
   if (process.env.DATA_ROOT) return process.env.DATA_ROOT;
-  // Always use writable OS temp directory in serverless environments (Vercel, AWS Lambda) or production
   if (
     process.env.VERCEL ||
     process.env.AWS_LAMBDA_FUNCTION_NAME ||
@@ -31,6 +31,13 @@ const metadataFile = path.join(dataDir, "metadata.json");
 let queue: Promise<unknown> = Promise.resolve();
 
 type RulesData = Pick<Database, "rules" | "rulesConfirmed">;
+
+function getSupabase(): SupabaseClient | null {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 
 function isAccount(value: unknown): value is Database["users"][number] {
   if (!value || typeof value !== "object") return false;
@@ -96,7 +103,7 @@ async function writeJson(file: string, value: unknown) {
   try {
     await mkdir(path.dirname(file), { recursive: true });
   } catch {
-    // ignore directory creation error if already exists
+    // ignore
   }
   await writeFile(file, JSON.stringify(value, null, 2));
 }
@@ -127,7 +134,58 @@ async function syncSuperadmin(users: Database["users"]): Promise<boolean> {
   return false;
 }
 
+async function loadFromSupabase(client: SupabaseClient): Promise<Database | null> {
+  try {
+    const { data, error } = await client.from("siklab_state").select("key, value");
+    if (error || !data || data.length === 0) return null;
+    const map = new Map<string, unknown>();
+    for (const row of data) {
+      map.set(row.key, row.value);
+    }
+    const rawUsers = map.get("users");
+    const rawRules = map.get("rules");
+    const rawScores = map.get("scores");
+    const rawRulesConfirmed = map.get("rulesConfirmed");
+    const rawUpdatedAt = map.get("updatedAt");
+
+    const users = (Array.isArray(rawUsers) ? rawUsers : []).filter(isAccount);
+    await syncSuperadmin(users);
+
+    const rules = normalizeRules(rawRules);
+    const rulesConfirmed = typeof rawRulesConfirmed === "boolean" ? rawRulesConfirmed : false;
+    const scores = Array.isArray(rawScores) ? (rawScores as Database["scores"]) : [];
+    const updatedAt = typeof rawUpdatedAt === "string" ? rawUpdatedAt : new Date().toISOString();
+
+    return { users, rules, rulesConfirmed, scores, updatedAt };
+  } catch (e) {
+    console.warn("Failed to load state from Supabase:", e);
+    return null;
+  }
+}
+
+async function saveToSupabase(client: SupabaseClient, db: Database) {
+  try {
+    await client.from("siklab_state").upsert([
+      { key: "users", value: db.users },
+      { key: "rules", value: db.rules },
+      { key: "rulesConfirmed", value: db.rulesConfirmed },
+      { key: "scores", value: db.scores },
+      { key: "updatedAt", value: db.updatedAt },
+    ]);
+  } catch (e) {
+    console.warn("Failed to save state to Supabase:", e);
+  }
+}
+
 async function loadDb(): Promise<Database> {
+  const supabase = getSupabase();
+  if (supabase) {
+    const sbData = await loadFromSupabase(supabase);
+    if (sbData) {
+      return sbData;
+    }
+  }
+
   try {
     await mkdir(dataDir, { recursive: true });
   } catch {
@@ -178,6 +236,11 @@ async function loadDb(): Promise<Database> {
     writes.push(writeJson(metadataFile, { updatedAt }));
   }
   await Promise.all(writes);
+
+  if (supabase) {
+    await saveToSupabase(supabase, db);
+  }
+
   return db;
 }
 
@@ -202,6 +265,12 @@ export async function updateDb<T>(fn: (db: Database) => T | Promise<T>): Promise
 
     const result = await fn(db);
     db.updatedAt = new Date().toISOString();
+
+    const supabase = getSupabase();
+    if (supabase) {
+      await saveToSupabase(supabase, db);
+    }
+
     const writes: Promise<void>[] = [writeJson(metadataFile, { updatedAt: db.updatedAt })];
     if (JSON.stringify(db.users) !== original.users) writes.push(writeJson(usersFile, db.users));
     if (JSON.stringify({ rules: db.rules, rulesConfirmed: db.rulesConfirmed }) !== original.rules) {

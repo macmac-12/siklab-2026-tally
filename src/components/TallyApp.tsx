@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   arnisWeightClasses,
   athleticsIndividualCategories,
@@ -227,6 +227,42 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
       await api(`/api/users?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       setAccounts((await api<{ users: Account[] }>("/api/users")).users);
       notify("Account removed.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
+  async function downloadBackup() {
+    try {
+      const res = await fetch("/api/backup");
+      if (!res.ok) throw new Error("Failed to export backup");
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `siklab-tally-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify("Backup downloaded successfully.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
+  async function restoreBackup(file: File) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch("/api/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed to restore backup");
+      notify("Database restored successfully!");
+      await refresh();
     } catch (e) {
       notify((e as Error).message, "error");
     }
@@ -512,7 +548,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         )}
 
         {!isOfficer && tab === "rules" && <RulesEditor rules={rules} onSave={saveRules}/>}
-        {isSuper && tab === "accounts" && <Accounts accounts={accounts} onCreate={createAccount} onRemove={removeAccount}/>}
+        {isSuper && tab === "accounts" && <Accounts accounts={accounts} onCreate={createAccount} onRemove={removeAccount} onBackup={downloadBackup} onRestore={restoreBackup}/>}
       </main>
     )}
 
@@ -880,9 +916,55 @@ function RulesEditor({ rules, onSave }: { rules: ScoringRules; onSave: (rules: S
   </section>;
 }
 
-function Accounts({ accounts, onCreate, onRemove }: { accounts: Account[]; onCreate: (form: { name: string; email: string; role: string; password: string }) => void; onRemove: (id: string) => void }) {
+function Accounts({
+  accounts,
+  onCreate,
+  onRemove,
+  onBackup,
+  onRestore,
+}: {
+  accounts: Account[];
+  onCreate: (form: { name: string; email: string; role: string; password: string }) => void;
+  onRemove: (id: string) => void;
+  onBackup: () => void;
+  onRestore: (file: File) => void;
+}) {
   const [form, setForm] = useState({ name: "", email: "", role: "officer", password: "" });
+  const fileInputRef = useRef<HTMLInputElement>(null);
   return <>
+    <section className="panel entry" style={{ marginBottom: "1.5rem" }}>
+      <h2>Database Backup & Restore</h2>
+      <p style={{ fontSize: "0.875rem", color: "#475569", margin: "0.5rem 0 1rem" }}>
+        Export a full snapshot of your tallying data (scores, rules, and accounts) or restore from an existing JSON backup.
+      </p>
+      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+        <button className="button primary" onClick={onBackup} style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+          ⬇️ Download Backup (.json)
+        </button>
+        <button
+          className="button"
+          onClick={() => fileInputRef.current?.click()}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+        >
+          ⬆️ Restore from JSON File
+        </button>
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              if (confirm("Are you sure you want to restore data from this file? This will overwrite existing scores and rules.")) {
+                onRestore(file);
+              }
+              e.target.value = "";
+            }
+          }}
+        />
+      </div>
+    </section>
     <section className="panel entry">
       <h2>Create an account</h2>
       <div className="formgrid accountform">
