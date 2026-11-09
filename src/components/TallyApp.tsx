@@ -541,9 +541,6 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           <button className="outline" onClick={() => void logout()}>Sign out</button>
         </div>
 
-        {!rulesConfirmed && (
-          <div className="warning">Review and save the scoring rules for each event before approving results. Rules can be edited in the Scoring rules tab.</div>
-        )}
 
         <div className="tabs">
           {isOfficer ? (
