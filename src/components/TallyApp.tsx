@@ -12,7 +12,7 @@ import {
   rulesKeyForEvent,
   taekwondoWeightClasses,
 } from "@/lib/constants";
-import type { Role, ScoringRules, ScoreSubmission } from "@/lib/types";
+import type { Role, ScoringRules, ScoreSubmission, ScoreResult } from "@/lib/types";
 
 type User = { id: string; name: string; email: string; role: Role };
 type Account = User & { createdAt: string };
@@ -469,7 +469,14 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                               {s.results.map((r) => {
                                 const col = findCollege(r.collegeId);
                                 return (
-                                  <span key={r.collegeId} className="score-chip" style={{ borderColor: col?.border }}>
+                                  <span
+                                    key={r.collegeId}
+                                    className="score-chip"
+                                    style={{
+                                      borderColor: col?.border,
+                                      background: col?.bg,
+                                    }}
+                                  >
                                     <span className="college-badge small" style={{ background: col?.color }}>{r.collegeId}</span>
                                     <span>{r.place}</span>
                                     <b>({r.points})</b>
