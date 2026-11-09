@@ -28,6 +28,7 @@ const usersFile = path.join(dataDir, "users.json");
 const rulesFile = path.join(dataDir, "rules.json");
 const scoresFile = path.join(dataDir, "scores.json");
 const metadataFile = path.join(dataDir, "metadata.json");
+const schedulesFile = path.join(dataDir, "schedules.json");
 let queue: Promise<unknown> = Promise.resolve();
 
 type RulesData = Pick<Database, "rules" | "rulesConfirmed">;
@@ -145,6 +146,7 @@ async function loadFromSupabase(client: SupabaseClient): Promise<Database | null
     const rawUsers = map.get("users");
     const rawRules = map.get("rules");
     const rawScores = map.get("scores");
+    const rawSchedules = map.get("schedules");
     const rawRulesConfirmed = map.get("rulesConfirmed");
     const rawUpdatedAt = map.get("updatedAt");
 
@@ -154,9 +156,10 @@ async function loadFromSupabase(client: SupabaseClient): Promise<Database | null
     const rules = normalizeRules(rawRules);
     const rulesConfirmed = typeof rawRulesConfirmed === "boolean" ? rawRulesConfirmed : false;
     const scores = Array.isArray(rawScores) ? (rawScores as Database["scores"]) : [];
+    const schedules = Array.isArray(rawSchedules) ? (rawSchedules as Database["schedules"]) : [];
     const updatedAt = typeof rawUpdatedAt === "string" ? rawUpdatedAt : new Date().toISOString();
 
-    return { users, rules, rulesConfirmed, scores, updatedAt };
+    return { users, rules, rulesConfirmed, scores, schedules, updatedAt };
   } catch (e) {
     console.warn("Failed to load state from Supabase:", e);
     return null;
@@ -170,6 +173,7 @@ async function saveToSupabase(client: SupabaseClient, db: Database) {
       { key: "rules", value: db.rules },
       { key: "rulesConfirmed", value: db.rulesConfirmed },
       { key: "scores", value: db.scores },
+      { key: "schedules", value: db.schedules },
       { key: "updatedAt", value: db.updatedAt },
     ]);
   } catch (e) {
@@ -195,6 +199,7 @@ async function loadDb(): Promise<Database> {
   const storedUsers = await readJson<unknown>(usersFile, path.join(bundledDir, "users.json"));
   const storedRules = await readJson<unknown>(rulesFile, path.join(bundledDir, "rules.json"));
   const storedScores = await readJson<unknown>(scoresFile, path.join(bundledDir, "scores.json"));
+  const storedSchedules = await readJson<unknown>(schedulesFile);
   const storedMetadata = await readJson<unknown>(metadataFile, path.join(bundledDir, "metadata.json"));
   const storedRulesData = storedRules && typeof storedRules === "object" ? storedRules as Partial<RulesData> : undefined;
   const storedMetadataData = storedMetadata && typeof storedMetadata === "object"
@@ -220,11 +225,12 @@ async function loadDb(): Promise<Database> {
   const scores = Array.isArray(storedScores) ? storedScores
     : Array.isArray(legacy?.scores) ? legacy.scores
       : [];
+  const schedules = Array.isArray(storedSchedules) ? (storedSchedules as Database["schedules"]) : [];
   const updatedAt = typeof storedMetadataData?.updatedAt === "string"
     ? storedMetadataData.updatedAt
     : typeof legacy?.updatedAt === "string" ? legacy.updatedAt : new Date().toISOString();
 
-  const db: Database = { users, ...rules, scores, updatedAt };
+  const db: Database = { users, ...rules, scores, schedules, updatedAt };
   const writes: Promise<void>[] = [];
   if (usersNeedWrite) writes.push(writeJson(usersFile, users));
   if (storedRules === undefined || !hasEventRules || JSON.stringify(storedRulesData?.rules) !== JSON.stringify(rules.rules)
@@ -232,6 +238,7 @@ async function loadDb(): Promise<Database> {
     writes.push(writeJson(rulesFile, rules));
   }
   if (storedScores === undefined || !Array.isArray(storedScores)) writes.push(writeJson(scoresFile, scores));
+  if (storedSchedules === undefined || !Array.isArray(storedSchedules)) writes.push(writeJson(schedulesFile, schedules));
   if (storedMetadata === undefined || typeof storedMetadataData?.updatedAt !== "string") {
     writes.push(writeJson(metadataFile, { updatedAt }));
   }
@@ -261,6 +268,7 @@ export async function updateDb<T>(fn: (db: Database) => T | Promise<T>): Promise
       users: JSON.stringify(db.users),
       rules: JSON.stringify({ rules: db.rules, rulesConfirmed: db.rulesConfirmed }),
       scores: JSON.stringify(db.scores),
+      schedules: JSON.stringify(db.schedules),
     };
 
     const result = await fn(db);
@@ -277,6 +285,7 @@ export async function updateDb<T>(fn: (db: Database) => T | Promise<T>): Promise
       writes.push(writeJson(rulesFile, { rules: db.rules, rulesConfirmed: db.rulesConfirmed }));
     }
     if (JSON.stringify(db.scores) !== original.scores) writes.push(writeJson(scoresFile, db.scores));
+    if (JSON.stringify(db.schedules) !== original.schedules) writes.push(writeJson(schedulesFile, db.schedules));
     await Promise.all(writes);
     return result;
   });

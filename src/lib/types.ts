@@ -3,4 +3,23 @@ export type Account = { id: string; name: string; email: string; role: Role; pas
 export type ScoringRules = Record<string, Record<string, number>>;
 export type ScoreResult = { collegeId: string; place: string; points: number };
 export type ScoreSubmission = { id: string; event: string; category: string; detail?: string; format?: string; results: ScoreResult[]; by: string; status: "Pending" | "Approved" | "Rejected"; createdAt: string; reviewedBy?: string; reviewedAt?: string };
-export type Database = { users: Account[]; scores: ScoreSubmission[]; rules: ScoringRules; rulesConfirmed: boolean; updatedAt: string };
+export type GameSchedule = {
+  id: string;
+  event: string;
+  category: string;
+  detail?: string;
+  round: string;
+  teamA: string;
+  teamB: string;
+  date: string;
+  time: string;
+  venue: string;
+  winner?: string;
+  scoreA?: string;
+  scoreB?: string;
+  status: "Upcoming" | "Ongoing" | "Completed";
+  createdBy: string;
+  createdAt: string;
+};
+
+export type Database = { users: Account[]; scores: ScoreSubmission[]; schedules: GameSchedule[]; rules: ScoringRules; rulesConfirmed: boolean; updatedAt: string };

@@ -10,9 +10,16 @@ import {
   eventNeedsDetail,
   events,
   rulesKeyForEvent,
+  roundOptions,
   taekwondoWeightClasses,
 } from "@/lib/constants";
-import type { Role, ScoringRules, ScoreSubmission, ScoreResult } from "@/lib/types";
+import type { Role, ScoringRules, ScoreSubmission, ScoreResult, GameSchedule } from "@/lib/types";
+import {
+  PublicScheduleView,
+  ScheduleManager,
+  RecordResultModal,
+  EditScheduleModal,
+} from "./ScheduleComponents";
 
 type User = { id: string; name: string; email: string; role: Role };
 type Account = User & { createdAt: string };
@@ -43,6 +50,10 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
   const [collegeFilter, setCollegeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editingScore, setEditingScore] = useState<Score | null>(null);
+  const [schedules, setSchedules] = useState<GameSchedule[]>([]);
+  const [publicTab, setPublicTab] = useState<"standings" | "schedules">("standings");
+  const [recordingSchedule, setRecordingSchedule] = useState<GameSchedule | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<GameSchedule | null>(null);
 
   const notify = (text: string, type: Notice["type"] = "success") => {
     setNotice({ text, type });
@@ -51,16 +62,18 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [scoreData, ruleData, meData] = await Promise.all([
+      const [scoreData, ruleData, meData, schedData] = await Promise.all([
         api<{ scores: Score[]; updatedAt: string }>("/api/scores"),
         api<{ rules: ScoringRules; rulesConfirmed: boolean }>("/api/rules"),
         api<{ user: User | null }>("/api/auth/me"),
+        api<{ schedules: GameSchedule[] }>("/api/schedules").catch(() => ({ schedules: [] })),
       ]);
       setScores(scoreData.scores);
       setUpdatedAt(scoreData.updatedAt);
       setRules(ruleData.rules);
       setRulesConfirmed(ruleData.rulesConfirmed);
       setUser(meData.user);
+      setSchedules(schedData.schedules || []);
     } catch (e) {
       notify((e as Error).message, "error");
     }
@@ -186,6 +199,50 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
       await refresh();
       setEditingScore(null);
       notify("Submission deleted.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
+  async function createSchedule(form: {
+    event: string;
+    category: string;
+    detail?: string;
+    round: string;
+    teamA: string;
+    teamB: string;
+    date: string;
+    time: string;
+    venue: string;
+  }) {
+    try {
+      await api("/api/schedules", { method: "POST", body: JSON.stringify(form) });
+      await refresh();
+      notify("Game scheduled successfully.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
+  async function updateSchedule(id: string, updates: Partial<GameSchedule>) {
+    try {
+      await api("/api/schedules", { method: "PATCH", body: JSON.stringify({ id, ...updates }) });
+      await refresh();
+      setRecordingSchedule(null);
+      setEditingSchedule(null);
+      notify("Game schedule / result updated.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
+  async function deleteSchedule(id: string) {
+    if (!confirm("Are you sure you want to remove this scheduled game?")) return;
+    try {
+      await api(`/api/schedules?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      await refresh();
+      setEditingSchedule(null);
+      notify("Schedule removed.");
     } catch (e) {
       notify((e as Error).message, "error");
     }
@@ -330,6 +387,26 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           ))}
         </div>
 
+        {/* Public view toggle tabs */}
+        <div className="public-tabs">
+          <button
+            className={`public-tab-btn ${publicTab === "standings" ? "active" : ""}`}
+            onClick={() => setPublicTab("standings")}
+          >
+            📊 Overall Standings & Medals
+          </button>
+          <button
+            className={`public-tab-btn ${publicTab === "schedules" ? "active" : ""}`}
+            onClick={() => setPublicTab("schedules")}
+          >
+            📅 Game Schedules & Results {schedules.length > 0 && <span className="sched-count">{schedules.length}</span>}
+          </button>
+        </div>
+
+        {publicTab === "schedules" ? (
+          <PublicScheduleView schedules={schedules} />
+        ) : (
+          <>
         <div className="topgrid">
           <section className="panel">
             <div className="panelhead">
@@ -448,6 +525,8 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           </div>
           <p className="footnote">Ties share a medal. Only approved scores count toward medals and points.</p>
         </section>
+        </>
+        )}
 
         <footer>SIKLAB 2026 · CSPC INTRAMURALS · SCOREBOARD</footer>
       </main>
@@ -466,17 +545,37 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           <div className="warning">Review and save the scoring rules for each event before approving results. Rules can be edited in the Scoring rules tab.</div>
         )}
 
-        {!isOfficer && (
-          <div className="tabs">
-            {["submissions", "rules", ...(isSuper ? ["accounts"] : [])].map((item) => (
-              <button key={item} className={tab === item ? "selected" : ""} onClick={() => setTab(item)}>
-                {item === "rules" ? "Scoring rules" : item[0].toUpperCase() + item.slice(1)}
+        <div className="tabs">
+          {isOfficer ? (
+            <>
+              <button className={tab === "submissions" ? "selected" : ""} onClick={() => setTab("submissions")}>
+                Score Entry
               </button>
-            ))}
-          </div>
-        )}
+              <button className={tab === "schedules" ? "selected" : ""} onClick={() => setTab("schedules")}>
+                Game Schedules &amp; Results
+              </button>
+            </>
+          ) : (
+            <>
+              <button className={tab === "submissions" ? "selected" : ""} onClick={() => setTab("submissions")}>
+                Submissions
+              </button>
+              <button className={tab === "rules" ? "selected" : ""} onClick={() => setTab("rules")}>
+                Scoring rules
+              </button>
+              <button className={tab === "schedules" ? "selected" : ""} onClick={() => setTab("schedules")}>
+                Game Schedules &amp; Results
+              </button>
+              {isSuper && (
+                <button className={tab === "accounts" ? "selected" : ""} onClick={() => setTab("accounts")}>
+                  Accounts
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
-        {(isOfficer || tab === "submissions") && (
+        {tab === "submissions" && (
           isOfficer ? (
             <ScoreEntry rules={rules} onSubmit={submitScore} scores={scores.filter((s) => s.by === user.name)}/>
           ) : (
@@ -548,6 +647,15 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         )}
 
         {!isOfficer && tab === "rules" && <RulesEditor rules={rules} onSave={saveRules}/>}
+        {tab === "schedules" && (
+          <ScheduleManager
+            schedules={schedules}
+            onCreate={createSchedule}
+            onOpenRecord={(s) => setRecordingSchedule(s)}
+            onOpenEdit={(s) => setEditingSchedule(s)}
+            onDelete={deleteSchedule}
+          />
+        )}
         {isSuper && tab === "accounts" && <Accounts accounts={accounts} onCreate={createAccount} onRemove={removeAccount} onBackup={downloadBackup} onRestore={restoreBackup}/>}
       </main>
     )}
@@ -559,6 +667,21 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         onClose={() => setEditingScore(null)}
         onSave={updateScore}
         onDelete={deleteScore}
+      />
+    )}
+    {recordingSchedule && (
+      <RecordResultModal
+        schedule={recordingSchedule}
+        onClose={() => setRecordingSchedule(null)}
+        onSave={(updates) => updateSchedule(recordingSchedule.id, updates)}
+      />
+    )}
+    {editingSchedule && (
+      <EditScheduleModal
+        schedule={editingSchedule}
+        onClose={() => setEditingSchedule(null)}
+        onSave={(updates) => updateSchedule(editingSchedule.id, updates)}
+        onDelete={() => deleteSchedule(editingSchedule.id)}
       />
     )}
     {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLogin={login}/>}

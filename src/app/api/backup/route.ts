@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
   await updateDb((db) => {
     if (Array.isArray(body.scores)) db.scores = body.scores;
+    if (Array.isArray(body.schedules)) db.schedules = body.schedules;
     if (body.rules && typeof body.rules === "object") db.rules = body.rules;
     if (typeof body.rulesConfirmed === "boolean") db.rulesConfirmed = body.rulesConfirmed;
     if (Array.isArray(body.users) && body.users.length > 0) {

@@ -58,6 +58,18 @@ export const events = [
 
 export const categories = ["Men", "Women", "Mixed / Open"] as const;
 
+export const roundOptions = [
+  "Eliminations",
+  "Round Robin",
+  "Quarter-Finals",
+  "Semi-Finals",
+  "3rd Place",
+  "Finals",
+  "Game 1",
+  "Game 2",
+  "Game 3",
+] as const;
+
 export const athleticsIndividualCategories = [
   "100m Dash",
   "200m Dash",
