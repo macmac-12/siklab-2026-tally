@@ -6,8 +6,12 @@ import {
   athleticsRelayCategories,
   categories,
   colleges,
+  danceSportsCategories,
   eventNeedsDetail,
   events,
+  getCategoriesForEvent,
+  getRoundOptionsForEvent,
+  isAllCollegesEvent,
   roundOptions,
   taekwondoWeightClasses,
 } from "@/lib/constants";
@@ -74,7 +78,6 @@ export function toTimeInputValue(timeStr: string): string {
   if (!timeStr) return "09:00";
   const s = timeStr.trim();
   if (/^\d{2}:\d{2}$/.test(s)) return s;
-  if (/^\d{1}:\d{2}$/.test(s)) return `0${s}`;
   const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
   if (match) {
     let hours = parseInt(match[1], 10);
@@ -88,7 +91,7 @@ export function toTimeInputValue(timeStr: string): string {
 }
 
 export function normalizeVenue(v: string) {
-  return v.trim().toLowerCase().replace(/\s+/g, " ");
+  return v ? v.trim().toLowerCase().replace(/\s+/g, " ") : "";
 }
 
 export function findVenueConflict(
@@ -107,7 +110,6 @@ export function findVenueConflict(
     if (normalizeVenue(s.venue) !== targetVenue) continue;
 
     const existingIsEgame = isEgame(s.event);
-    // Conflict if either is NOT an E-game
     if (!targetIsEgame || !existingIsEgame) {
       return s;
     }
@@ -123,34 +125,56 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [collegeFilter, setCollegeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [venueFilter, setVenueFilter] = useState("all");
 
-  const filtered = schedules.filter((s) => {
-    if (eventFilter !== "all" && s.event !== eventFilter) return false;
-    if (categoryFilter !== "all" && s.category !== categoryFilter) return false;
-    if (statusFilter !== "all" && s.status !== statusFilter) return false;
-    if (collegeFilter !== "all" && s.teamA !== collegeFilter && s.teamB !== collegeFilter) return false;
-    return true;
-  });
+  const uniqueDates = useMemo(() => {
+    const set = new Set<string>();
+    schedules.forEach((s) => s.date && set.add(s.date));
+    return Array.from(set).sort();
+  }, [schedules]);
 
-  // Sort: Ongoing first, then Upcoming (soonest date first), then Completed (latest first)
-  const sorted = [...filtered].sort((a, b) => {
-    const statusWeight = (status: GameSchedule["status"]) =>
-      status === "Ongoing" ? 0 : status === "Upcoming" ? 1 : 2;
-    const diffStatus = statusWeight(a.status) - statusWeight(b.status);
-    if (diffStatus !== 0) return diffStatus;
-    const dateA = `${a.date} ${a.time}`;
-    const dateB = `${b.date} ${b.time}`;
-    return a.status === "Completed" ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
-  });
+  const uniqueVenues = useMemo(() => {
+    const set = new Set<string>();
+    schedules.forEach((s) => s.venue && set.add(s.venue.trim()));
+    return Array.from(set).sort();
+  }, [schedules]);
+
+  const filtered = useMemo(() => {
+    return schedules.filter((s) => {
+      if (eventFilter !== "all" && s.event !== eventFilter) return false;
+      if (categoryFilter !== "all" && s.category !== categoryFilter) return false;
+      if (statusFilter !== "all" && s.status !== statusFilter) return false;
+      if (dateFilter !== "all" && s.date !== dateFilter) return false;
+      if (venueFilter !== "all" && s.venue.trim().toLowerCase() !== venueFilter.trim().toLowerCase()) return false;
+      if (collegeFilter !== "all") {
+        const isAll = s.isAllColleges || s.teamA === "All Colleges";
+        if (!isAll && s.teamA !== collegeFilter && s.teamB !== collegeFilter && s.winner !== collegeFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [schedules, eventFilter, categoryFilter, collegeFilter, statusFilter, dateFilter, venueFilter]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const order = { Ongoing: 0, Upcoming: 1, Completed: 2 };
+      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+      const dateA = `${a.date} ${normalizeTime(a.time)}`;
+      const dateB = `${b.date} ${normalizeTime(b.time)}`;
+      return dateA.localeCompare(dateB);
+    });
+  }, [filtered]);
 
   return (
-    <section className="schedule-section">
-      <div className="sectionhead" style={{ marginBottom: 12 }}>
+    <section className="panel schedule-panel">
+      <div className="panelhead sched-head" style={{ borderBottom: "1px solid var(--line)" }}>
         <div>
           <div className="eyebrow">TOURNAMENT CALENDAR &amp; RESULTS</div>
           <h2>Game Schedules &amp; Match Results</h2>
           <p className="footnote">
-            Follow live matches, scheduled games, and official winners across every intramural sport.
+            Follow live matches, scheduled games, and official winners across every intramural sport and showcase.
           </p>
         </div>
         <div className="filters sched-filters">
@@ -160,11 +184,21 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
               <option key={ev} value={ev}>{ev}</option>
             ))}
           </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All status</option>
+            <option value="Upcoming">Upcoming</option>
+            <option value="Ongoing">Live / Ongoing</option>
+            <option value="Completed">Completed</option>
+          </select>
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="all">All categories</option>
             {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
+            {danceSportsCategories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+            <option value="All Colleges / Open">All Colleges / Open</option>
           </select>
           <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}>
             <option value="all">All colleges</option>
@@ -172,18 +206,42 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
               <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
             ))}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">All status</option>
-            <option value="Upcoming">Upcoming</option>
-            <option value="Ongoing">Live / Ongoing</option>
-            <option value="Completed">Completed</option>
+          <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
+            <option value="all">All dates</option>
+            {uniqueDates.map((d) => (
+              <option key={d} value={d}>{formatDate(d)}</option>
+            ))}
           </select>
+          <select value={venueFilter} onChange={(e) => setVenueFilter(e.target.value)}>
+            <option value="all">All venues</option>
+            {uniqueVenues.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          {(eventFilter !== "all" || statusFilter !== "all" || categoryFilter !== "all" || collegeFilter !== "all" || dateFilter !== "all" || venueFilter !== "all") && (
+            <button
+              type="button"
+              className="outline"
+              style={{ padding: "4px 8px", fontSize: 11 }}
+              onClick={() => {
+                setEventFilter("all");
+                setStatusFilter("all");
+                setCategoryFilter("all");
+                setCollegeFilter("all");
+                setDateFilter("all");
+                setVenueFilter("all");
+              }}
+            >
+              Reset filters
+            </button>
+          )}
         </div>
       </div>
 
       {sorted.length > 0 ? (
         <div className="schedule-grid">
           {sorted.map((s) => {
+            const isAllColleges = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event);
             const colA = findCollege(s.teamA);
             const colB = findCollege(s.teamB);
             const isCompleted = s.status === "Completed";
@@ -210,56 +268,90 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
                   </span>
                 </div>
 
-                <div className="matchup-container">
-                  {/* Team A */}
-                  <div
-                    className={`team-side team-a ${teamAWon ? "winner" : ""}`}
-                    style={{ borderLeft: `3px solid ${colA?.color || "var(--accent)"}`, paddingLeft: 8 }}
-                  >
-                    <div className="team-header">
-                      <span className="college-badge" style={{ background: colA?.color }}>
-                        {s.teamA}
+                {isAllColleges ? (
+                  <div className="matchup-container all-colleges-card" style={{ padding: 10, background: "rgba(241, 245, 249, 0.6)", borderRadius: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: "var(--foreground)" }}>
+                        👥 All 7 Colleges Competing
                       </span>
-                      <span className="team-name-txt" title={colA?.name}>
-                        {colA?.name || s.teamA}
-                      </span>
+                      {isCompleted && s.winner && s.winner !== "Draw" && (
+                        <span className="winner-tag">🏆 {s.winner} Won</span>
+                      )}
+                      {isDraw && (
+                        <span className="draw-tag">🤝 Joint Winners / Draw</span>
+                      )}
                     </div>
-                    {s.scoreA !== undefined && s.scoreA !== "" && (
-                      <span className="team-score">{s.scoreA}</span>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {colleges.map((c) => {
+                        const isWinner = isCompleted && s.winner === c.id;
+                        return (
+                          <span
+                            key={c.id}
+                            className="college-badge"
+                            style={{
+                              background: c.color,
+                              outline: isWinner ? "2px solid #10b981" : "none",
+                              fontWeight: isWinner ? 800 : 600,
+                            }}
+                          >
+                            {c.id} {isWinner ? "🏆" : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="matchup-container">
+                    {/* Team A */}
+                    <div
+                      className={`team-side team-a ${teamAWon ? "winner" : ""}`}
+                      style={{ borderLeft: `3px solid ${colA?.color || "var(--accent)"}`, paddingLeft: 8 }}
+                    >
+                      <div className="team-header">
+                        <span className="college-badge" style={{ background: colA?.color }}>
+                          {s.teamA}
+                        </span>
+                        <span className="team-name-txt" title={colA?.name}>
+                          {colA?.name || s.teamA}
+                        </span>
+                      </div>
+                      {s.scoreA !== undefined && s.scoreA !== "" && (
+                        <span className="team-score">{s.scoreA}</span>
+                      )}
+                      {teamAWon && <span className="winner-tag">🏆 WINNER</span>}
+                    </div>
+
+                    {/* VS Divider */}
+                    <div className="vs-divider">
+                      <span className="vs-circle">VS</span>
+                    </div>
+
+                    {/* Team B */}
+                    <div
+                      className={`team-side team-b ${teamBWon ? "winner" : ""}`}
+                      style={{ borderRight: `3px solid ${colB?.color || "var(--accent)"}`, paddingRight: 8 }}
+                    >
+                      <div className="team-header">
+                        <span className="team-name-txt" title={colB?.name}>
+                          {colB?.name || s.teamB}
+                        </span>
+                        <span className="college-badge" style={{ background: colB?.color }}>
+                          {s.teamB}
+                        </span>
+                      </div>
+                      {s.scoreB !== undefined && s.scoreB !== "" && (
+                        <span className="team-score">{s.scoreB}</span>
+                      )}
+                      {teamBWon && <span className="winner-tag">🏆 WINNER</span>}
+                    </div>
+
+                    {isDraw && (
+                      <div className="draw-tag">
+                        🤝 MATCH RESULT: DRAW / TIE
+                      </div>
                     )}
-                    {teamAWon && <span className="winner-tag">🏆 WINNER</span>}
                   </div>
-
-                  {/* VS Divider */}
-                  <div className="vs-divider">
-                    <span className="vs-circle">VS</span>
-                  </div>
-
-                  {/* Team B */}
-                  <div
-                    className={`team-side team-b ${teamBWon ? "winner" : ""}`}
-                    style={{ borderRight: `3px solid ${colB?.color || "var(--accent)"}`, paddingRight: 8 }}
-                  >
-                    <div className="team-header">
-                      <span className="team-name-txt" title={colB?.name}>
-                        {colB?.name || s.teamB}
-                      </span>
-                      <span className="college-badge" style={{ background: colB?.color }}>
-                        {s.teamB}
-                      </span>
-                    </div>
-                    {s.scoreB !== undefined && s.scoreB !== "" && (
-                      <span className="team-score">{s.scoreB}</span>
-                    )}
-                    {teamBWon && <span className="winner-tag">🏆 WINNER</span>}
-                  </div>
-
-                  {isDraw && (
-                    <div className="draw-tag">
-                      🤝 MATCH RESULT: DRAW / TIE
-                    </div>
-                  )}
-                </div>
+                )}
 
                 <div className="sched-meta">
                   <span>📅 {formatDate(s.date)}</span>
@@ -317,8 +409,25 @@ export function ScheduleManager({
   const [time, setTime] = useState<string>("09:00");
   const [venue, setVenue] = useState<string>("CSPC Gymnasium");
 
+  // Filters for results table
   const [eventFilter, setEventFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [venueFilter, setVenueFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
+
+  const isAllColleges = isAllCollegesEvent(event);
+  const eventCategories = getCategoriesForEvent(event);
+  const eventRounds = getRoundOptionsForEvent(event);
+
+  function handleEventChange(nextEvent: string) {
+    setEvent(nextEvent);
+    setDetail("");
+    const cats = getCategoriesForEvent(nextEvent);
+    setCategory(cats[0] || "Men");
+    const rnds = getRoundOptionsForEvent(nextEvent);
+    setRound(rnds[0] || "Eliminations");
+  }
 
   // Real-time venue conflict detection
   const conflict = useMemo(() => {
@@ -328,13 +437,16 @@ export function ScheduleManager({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (teamA === teamB) {
+    if (!isAllColleges && teamA === teamB) {
       alert("Team A and Team B must be different colleges.");
       return;
     }
     if (conflict) {
+      const matchupDesc = conflict.isAllColleges || conflict.teamA === conflict.teamB
+        ? "All Colleges"
+        : `${conflict.teamA} vs ${conflict.teamB}`;
       alert(
-        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${matchupDesc}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
       );
       return;
     }
@@ -343,19 +455,41 @@ export function ScheduleManager({
       category,
       detail: detail.trim() || undefined,
       round,
-      teamA,
-      teamB,
+      teamA: isAllColleges ? "All Colleges" : teamA,
+      teamB: isAllColleges ? "All Colleges" : teamB,
       date,
       time: formatDisplayTime(time),
       venue,
     });
   };
 
-  const filtered = schedules.filter((s) => {
-    if (eventFilter !== "all" && s.event !== eventFilter) return false;
-    if (statusFilter !== "all" && s.status !== statusFilter) return false;
-    return true;
-  });
+  const uniqueDates = useMemo(() => {
+    const set = new Set<string>();
+    schedules.forEach((s) => s.date && set.add(s.date));
+    return Array.from(set).sort();
+  }, [schedules]);
+
+  const uniqueVenues = useMemo(() => {
+    const set = new Set<string>();
+    schedules.forEach((s) => s.venue && set.add(s.venue.trim()));
+    return Array.from(set).sort();
+  }, [schedules]);
+
+  const filtered = useMemo(() => {
+    return schedules.filter((s) => {
+      if (eventFilter !== "all" && s.event !== eventFilter) return false;
+      if (statusFilter !== "all" && s.status !== statusFilter) return false;
+      if (dateFilter !== "all" && s.date !== dateFilter) return false;
+      if (venueFilter !== "all" && s.venue.trim().toLowerCase() !== venueFilter.trim().toLowerCase()) return false;
+      if (teamFilter !== "all") {
+        const isAll = s.isAllColleges || s.teamA === "All Colleges";
+        if (!isAll && s.teamA !== teamFilter && s.teamB !== teamFilter && s.winner !== teamFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [schedules, eventFilter, statusFilter, dateFilter, venueFilter, teamFilter]);
 
   return (
     <>
@@ -363,20 +497,14 @@ export function ScheduleManager({
       <section className="panel entry" style={{ marginBottom: "1.5rem" }}>
         <h2>Assign Game Schedule</h2>
         <p style={{ fontSize: "0.875rem", color: "var(--muted)", margin: "0.25rem 0 1.25rem" }}>
-          Schedule official intramural matches between colleges. Only 1 event is permitted per venue at the same time (except for E-Games).
+          Schedule official intramural matches and multi-college showcases. Only 1 event is permitted per venue at the same time (except for E-Games).
         </p>
 
         <form onSubmit={handleSubmit}>
           <div className="formgrid schedule-form-grid">
             <label>
               Event / Sport
-              <select
-                value={event}
-                onChange={(e) => {
-                  setEvent(e.target.value);
-                  setDetail("");
-                }}
-              >
+              <select value={event} onChange={(e) => handleEventChange(e.target.value)}>
                 {events.map((ev) => (
                   <option key={ev} value={ev}>{ev}</option>
                 ))}
@@ -384,9 +512,9 @@ export function ScheduleManager({
             </label>
 
             <label>
-              Category
+              Category / Division
               <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {categories.map((c) => (
+                {eventCategories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -448,31 +576,59 @@ export function ScheduleManager({
             )}
 
             <label>
-              Tournament Round
+              Tournament Round / Stage
               <select value={round} onChange={(e) => setRound(e.target.value)}>
-                {roundOptions.map((r) => (
+                {eventRounds.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </label>
 
-            <label>
-              Team A (Home)
-              <select value={teamA} onChange={(e) => setTeamA(e.target.value)}>
-                {colleges.map((c) => (
-                  <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
-                ))}
-              </select>
-            </label>
+            {isAllColleges ? (
+              <div
+                style={{
+                  gridColumn: "span 2",
+                  padding: "12px 16px",
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 10,
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "#166534", fontSize: 13, marginBottom: 2 }}>
+                  👥 All 7 Colleges Participate Together
+                </div>
+                <div style={{ fontSize: 12, color: "#15803d" }}>
+                  This event is contested simultaneously by all colleges (no dual Team A vs Team B matchup needed).
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {colleges.map((c) => (
+                    <span key={c.id} className="college-badge" style={{ background: c.color, fontSize: 11 }}>
+                      {c.id} · {c.name.split(" ")[0]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <label>
+                  Team A (Home)
+                  <select value={teamA} onChange={(e) => setTeamA(e.target.value)}>
+                    {colleges.map((c) => (
+                      <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
+                    ))}
+                  </select>
+                </label>
 
-            <label>
-              Team B (Away)
-              <select value={teamB} onChange={(e) => setTeamB(e.target.value)}>
-                {colleges.map((c) => (
-                  <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
-                ))}
-              </select>
-            </label>
+                <label>
+                  Team B (Away)
+                  <select value={teamB} onChange={(e) => setTeamB(e.target.value)}>
+                    {colleges.map((c) => (
+                      <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
 
             <label>
               Game Date
@@ -520,7 +676,12 @@ export function ScheduleManager({
               <span style={{ fontSize: 18 }}>⚠️</span>
               <div>
                 <b>Venue Conflict Detected:</b> &quot;{conflict.venue}&quot; is already booked on{" "}
-                {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+                {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> (
+                {conflict.category} ·{" "}
+                {conflict.isAllColleges || conflict.teamA === conflict.teamB
+                  ? "All Colleges"
+                  : `${conflict.teamA} vs ${conflict.teamB}`}
+                ).
                 <div style={{ marginTop: 2, fontSize: 12, color: "#b91c1c" }}>
                   Only 1 event per venue is allowed at the same time (except for E-Games). Please choose a different venue or time.
                 </div>
@@ -555,7 +716,7 @@ export function ScheduleManager({
           </div>
           <div className="filters sched-filters">
             <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
-              <option value="all">All sports</option>
+              <option value="all">All sports / events</option>
               {events.map((ev) => (
                 <option key={ev} value={ev}>{ev}</option>
               ))}
@@ -566,6 +727,40 @@ export function ScheduleManager({
               <option value="Ongoing">Ongoing</option>
               <option value="Completed">Completed</option>
             </select>
+            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
+              <option value="all">All dates</option>
+              {uniqueDates.map((d) => (
+                <option key={d} value={d}>{formatDate(d)}</option>
+              ))}
+            </select>
+            <select value={venueFilter} onChange={(e) => setVenueFilter(e.target.value)}>
+              <option value="all">All venues</option>
+              {uniqueVenues.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+            <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
+              <option value="all">All colleges</option>
+              {colleges.map((c) => (
+                <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
+              ))}
+            </select>
+            {(eventFilter !== "all" || statusFilter !== "all" || dateFilter !== "all" || venueFilter !== "all" || teamFilter !== "all") && (
+              <button
+                type="button"
+                className="outline"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+                onClick={() => {
+                  setEventFilter("all");
+                  setStatusFilter("all");
+                  setDateFilter("all");
+                  setVenueFilter("all");
+                  setTeamFilter("all");
+                }}
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -574,10 +769,10 @@ export function ScheduleManager({
             <thead>
               <tr>
                 <th>EVENT &amp; ROUND</th>
-                <th>MATCHUP</th>
+                <th>PARTICIPANTS / MATCHUP</th>
                 <th>DATE &amp; TIME</th>
                 <th>VENUE</th>
-                <th>STATUS</th>
+                <th>MATCH STATUS</th>
                 <th>RESULT / WINNER</th>
                 <th>ACTIONS</th>
               </tr>
@@ -585,6 +780,7 @@ export function ScheduleManager({
             <tbody>
               {filtered.length ? (
                 [...filtered].reverse().map((s) => {
+                  const isAll = s.isAllColleges || s.teamA === "All Colleges" || isAllCollegesEvent(s.event);
                   const colA = findCollege(s.teamA);
                   const colB = findCollege(s.teamB);
                   const hasConflict = findVenueConflict(schedules, {
@@ -605,15 +801,23 @@ export function ScheduleManager({
                         </small>
                       </td>
                       <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span className="college-badge" style={{ background: colA?.color }}>
-                            {s.teamA}
-                          </span>
-                          <span style={{ fontWeight: 700, color: "var(--muted)", fontSize: 11 }}>VS</span>
-                          <span className="college-badge" style={{ background: colB?.color }}>
-                            {s.teamB}
-                          </span>
-                        </div>
+                        {isAll ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, background: "#f1f5f9", padding: "3px 8px", borderRadius: 6, color: "#334155" }}>
+                              👥 All 7 Colleges
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span className="college-badge" style={{ background: colA?.color }}>
+                              {s.teamA}
+                            </span>
+                            <span style={{ fontWeight: 700, color: "var(--muted)", fontSize: 11 }}>VS</span>
+                            <span className="college-badge" style={{ background: colB?.color }}>
+                              {s.teamB}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div>{formatDate(s.date)}</div>
@@ -659,38 +863,41 @@ export function ScheduleManager({
                             ) : (
                               <span style={{ color: "var(--muted)" }}>Completed</span>
                             )}
-                            {(s.scoreA !== undefined && s.scoreB !== undefined && (s.scoreA || s.scoreB)) && (
-                              <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2 }}>
-                                {s.teamA} ({s.scoreA}) - {s.teamB} ({s.scoreB})
-                              </div>
+                            {(s.scoreA || s.scoreB) && !isAll && (
+                              <small style={{ display: "block", color: "var(--muted)", marginTop: 2 }}>
+                                {s.scoreA ?? "-"} : {s.scoreB ?? "-"}
+                              </small>
                             )}
+                            <small style={{ display: "block", color: "#64748b", fontSize: 10, marginTop: 3 }}>
+                              ℹ️ Match result · Official tally in Submissions
+                            </small>
                           </div>
                         ) : (
                           <span style={{ color: "var(--muted)", fontSize: 12 }}>Pending match</span>
                         )}
                       </td>
                       <td>
-                        <div className="actions" style={{ gap: 6 }}>
+                        <div className="actions">
                           <button
                             type="button"
                             className="button primary"
-                            style={{ fontSize: 12, padding: "5px 10px" }}
+                            style={{ padding: "5px 10px", fontSize: 12 }}
                             onClick={() => onOpenRecord(s)}
                           >
                             🏆 Record Winner
                           </button>
                           <button
                             type="button"
-                            className="button edit-btn"
-                            style={{ fontSize: 12, padding: "5px 8px" }}
+                            className="outline"
+                            style={{ padding: "5px 10px", fontSize: 12 }}
                             onClick={() => onOpenEdit(s)}
                           >
                             Edit
                           </button>
                           <button
                             type="button"
-                            className="button danger"
-                            style={{ fontSize: 12, padding: "5px 8px" }}
+                            className="button reject"
+                            style={{ padding: "5px 10px", fontSize: 12 }}
                             onClick={() => onDelete(s.id)}
                           >
                             Delete
@@ -702,8 +909,8 @@ export function ScheduleManager({
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="emptycell">
-                    No scheduled games found. Use the form above to assign a game.
+                  <td colSpan={7} className="emptycell" style={{ textAlign: "center" }}>
+                    No scheduled games found matching your filters.
                   </td>
                 </tr>
               )}
@@ -716,7 +923,7 @@ export function ScheduleManager({
 }
 
 // ==========================================
-// RECORD RESULT / WINNER MODAL
+// RECORD WINNER / RESULT MODAL
 // ==========================================
 export function RecordResultModal({
   schedule,
@@ -727,27 +934,26 @@ export function RecordResultModal({
   onClose: () => void;
   onSave: (updates: Partial<GameSchedule>) => void;
 }) {
+  const isAllColleges = schedule.isAllColleges || schedule.teamA === "All Colleges" || isAllCollegesEvent(schedule.event);
   const [winner, setWinner] = useState<string>(schedule.winner || "");
   const [scoreA, setScoreA] = useState<string>(schedule.scoreA || "");
   const [scoreB, setScoreB] = useState<string>(schedule.scoreB || "");
-  const [status, setStatus] = useState<GameSchedule["status"]>(
-    schedule.status === "Upcoming" ? "Completed" : schedule.status
-  );
+  const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status || "Completed");
 
   const colA = findCollege(schedule.teamA);
   const colB = findCollege(schedule.teamB);
 
-  const handleSelectWinner = (w: string) => {
-    setWinner(w);
-    if (w) setStatus("Completed");
+  const handleSelectWinner = (win: string) => {
+    setWinner(win);
+    setStatus("Completed");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
       winner: winner || undefined,
-      scoreA: scoreA.trim() || undefined,
-      scoreB: scoreB.trim() || undefined,
+      scoreA: !isAllColleges && scoreA.trim() ? scoreA.trim() : undefined,
+      scoreB: !isAllColleges && scoreB.trim() ? scoreB.trim() : undefined,
       status,
     });
   };
@@ -768,86 +974,124 @@ export function RecordResultModal({
 
         <div style={{ marginTop: 14 }}>
           <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
-            Who won the game?
+            Who won this event / match?
           </label>
-          <div className="winner-selector">
-            <button
-              type="button"
-              className={`winner-btn ${winner === schedule.teamA ? "selected" : ""}`}
-              onClick={() => handleSelectWinner(schedule.teamA)}
-            >
-              <span className="college-badge" style={{ background: colA?.color }}>
-                {schedule.teamA}
-              </span>
-              <span>{colA?.name || schedule.teamA}</span>
-              {winner === schedule.teamA && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
-            </button>
 
-            <button
-              type="button"
-              className={`winner-btn ${winner === schedule.teamB ? "selected" : ""}`}
-              onClick={() => handleSelectWinner(schedule.teamB)}
-            >
-              <span className="college-badge" style={{ background: colB?.color }}>
-                {schedule.teamB}
-              </span>
-              <span>{colB?.name || schedule.teamB}</span>
-              {winner === schedule.teamB && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
-            </button>
+          {isAllColleges ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+              {colleges.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`winner-btn ${winner === c.id ? "selected" : ""}`}
+                  onClick={() => handleSelectWinner(c.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}
+                >
+                  <span className="college-badge" style={{ background: c.color }}>{c.id}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>{c.name.split(" ")[0]}</span>
+                  {winner === c.id && <span style={{ color: "#10b981", fontWeight: 700, marginLeft: "auto" }}>🏆</span>}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
+                onClick={() => handleSelectWinner("Draw")}
+              >
+                <span>🤝 Draw / Joint Winner</span>
+              </button>
+              <button
+                type="button"
+                className={`winner-btn ${!winner ? "selected" : ""}`}
+                onClick={() => {
+                  setWinner("");
+                  setStatus("Upcoming");
+                }}
+              >
+                <span>⏳ Not Decided Yet</span>
+              </button>
+            </div>
+          ) : (
+            <div className="winner-selector">
+              <button
+                type="button"
+                className={`winner-btn ${winner === schedule.teamA ? "selected" : ""}`}
+                onClick={() => handleSelectWinner(schedule.teamA)}
+              >
+                <span className="college-badge" style={{ background: colA?.color }}>
+                  {schedule.teamA}
+                </span>
+                <span>{colA?.name || schedule.teamA}</span>
+                {winner === schedule.teamA && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
+              </button>
 
-            <button
-              type="button"
-              className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
-              onClick={() => handleSelectWinner("Draw")}
-              style={{ gridColumn: "span 1" }}
-            >
-              <span>🤝 Draw / Tie</span>
-            </button>
+              <button
+                type="button"
+                className={`winner-btn ${winner === schedule.teamB ? "selected" : ""}`}
+                onClick={() => handleSelectWinner(schedule.teamB)}
+              >
+                <span className="college-badge" style={{ background: colB?.color }}>
+                  {schedule.teamB}
+                </span>
+                <span>{colB?.name || schedule.teamB}</span>
+                {winner === schedule.teamB && <span style={{ color: "#10b981", fontWeight: 700 }}>🏆 WINNER</span>}
+              </button>
 
-            <button
-              type="button"
-              className={`winner-btn ${!winner ? "selected" : ""}`}
-              onClick={() => {
-                setWinner("");
-                setStatus("Upcoming");
-              }}
-              style={{ gridColumn: "span 1" }}
-            >
-              <span>⏳ Not Played Yet</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                className={`winner-btn ${winner === "Draw" ? "selected" : ""}`}
+                onClick={() => handleSelectWinner("Draw")}
+                style={{ gridColumn: "span 1" }}
+              >
+                <span>🤝 Draw / Tie</span>
+              </button>
+
+              <button
+                type="button"
+                className={`winner-btn ${!winner ? "selected" : ""}`}
+                onClick={() => {
+                  setWinner("");
+                  setStatus("Upcoming");
+                }}
+                style={{ gridColumn: "span 1" }}
+              >
+                <span>⏳ Not Played Yet</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
-            Scores (Optional)
-          </label>
-          <div className="scores-input-row">
-            <div>
-              <small style={{ display: "block", color: "var(--muted)", marginBottom: 4, fontWeight: 600 }}>
-                {schedule.teamA} Score
-              </small>
-              <input
-                type="text"
-                value={scoreA}
-                onChange={(e) => setScoreA(e.target.value)}
-                placeholder="e.g. 85"
-              />
-            </div>
-            <span style={{ fontWeight: 800, color: "var(--muted)", fontSize: 18 }}>-</span>
-            <div>
-              <small style={{ display: "block", color: "var(--muted)", marginBottom: 4, fontWeight: 600 }}>
-                {schedule.teamB} Score
-              </small>
-              <input
-                type="text"
-                value={scoreB}
-                onChange={(e) => setScoreB(e.target.value)}
-                placeholder="e.g. 72"
-              />
+        {!isAllColleges && (
+          <div style={{ marginTop: 14 }}>
+            <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
+              Scores (Optional)
+            </label>
+            <div className="scores-input-row">
+              <div>
+                <small style={{ display: "block", color: "var(--muted)", marginBottom: 4, fontWeight: 600 }}>
+                  {schedule.teamA} Score
+                </small>
+                <input
+                  type="text"
+                  value={scoreA}
+                  onChange={(e) => setScoreA(e.target.value)}
+                  placeholder="e.g. 85"
+                />
+              </div>
+              <span style={{ fontWeight: 800, color: "var(--muted)", fontSize: 18 }}>-</span>
+              <div>
+                <small style={{ display: "block", color: "var(--muted)", marginBottom: 4, fontWeight: 600 }}>
+                  {schedule.teamB} Score
+                </small>
+                <input
+                  type="text"
+                  value={scoreB}
+                  onChange={(e) => setScoreB(e.target.value)}
+                  placeholder="e.g. 72"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div style={{ marginTop: 14 }}>
           <label>
@@ -861,6 +1105,10 @@ export function RecordResultModal({
               <option value="Upcoming">Upcoming (Scheduled)</option>
             </select>
           </label>
+        </div>
+
+        <div style={{ marginTop: 12, padding: "8px 12px", background: "#f8fafc", borderRadius: 8, fontSize: 12, color: "#64748b" }}>
+          💡 <b>Notice:</b> This records the game match result for the tournament schedule. To officially tally tournament points, submit event results in the <b>Submissions</b> tab for admin approval.
         </div>
 
         <div className="modalfoot" style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 18 }}>
@@ -903,6 +1151,19 @@ export function EditScheduleModal({
   const [venue, setVenue] = useState(schedule.venue);
   const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status);
 
+  const isAllColleges = isAllCollegesEvent(event);
+  const eventCategories = getCategoriesForEvent(event);
+  const eventRounds = getRoundOptionsForEvent(event);
+
+  function handleEventChange(nextEvent: string) {
+    setEvent(nextEvent);
+    setDetail("");
+    const cats = getCategoriesForEvent(nextEvent);
+    setCategory(cats[0] || "Men");
+    const rnds = getRoundOptionsForEvent(nextEvent);
+    setRound(rnds[0] || "Eliminations");
+  }
+
   // Real-time conflict check
   const conflict = useMemo(() => {
     if (!venue || !date || !time) return null;
@@ -911,13 +1172,16 @@ export function EditScheduleModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (teamA === teamB) {
+    if (!isAllColleges && teamA === teamB) {
       alert("Team A and Team B must be different colleges.");
       return;
     }
     if (conflict) {
+      const matchupDesc = conflict.isAllColleges || conflict.teamA === conflict.teamB
+        ? "All Colleges"
+        : `${conflict.teamA} vs ${conflict.teamB}`;
       alert(
-        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${formatDisplayTime(conflict.time)} for ${conflict.event} (${conflict.category} · ${matchupDesc}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
       );
       return;
     }
@@ -926,12 +1190,13 @@ export function EditScheduleModal({
       category,
       detail: detail.trim() || undefined,
       round,
-      teamA,
-      teamB,
+      teamA: isAllColleges ? "All Colleges" : teamA,
+      teamB: isAllColleges ? "All Colleges" : teamB,
       date,
       time: formatDisplayTime(time),
       venue,
       status,
+      isAllColleges,
     });
   };
 
@@ -948,8 +1213,8 @@ export function EditScheduleModal({
 
         <div className="formgrid schedule-form-grid" style={{ marginTop: 12 }}>
           <label>
-            Event
-            <select value={event} onChange={(e) => setEvent(e.target.value)}>
+            Event / Sport
+            <select value={event} onChange={(e) => handleEventChange(e.target.value)}>
               {events.map((ev) => (
                 <option key={ev} value={ev}>{ev}</option>
               ))}
@@ -957,9 +1222,9 @@ export function EditScheduleModal({
           </label>
 
           <label>
-            Category
+            Category / Division
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {categories.map((c) => (
+              {eventCategories.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -975,34 +1240,55 @@ export function EditScheduleModal({
           </label>
 
           <label>
-            Round
+            Tournament Round / Stage
             <select value={round} onChange={(e) => setRound(e.target.value)}>
-              {roundOptions.map((r) => (
+              {eventRounds.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
           </label>
 
-          <label>
-            Team A
-            <select value={teamA} onChange={(e) => setTeamA(e.target.value)}>
-              {colleges.map((c) => (
-                <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
-              ))}
-            </select>
-          </label>
+          {isAllColleges ? (
+            <div
+              style={{
+                gridColumn: "span 2",
+                padding: "10px 14px",
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: "#166534", fontSize: 13 }}>
+                👥 All 7 Colleges Participate Together
+              </div>
+              <div style={{ fontSize: 11, color: "#15803d" }}>
+                This event is contested simultaneously by all colleges.
+              </div>
+            </div>
+          ) : (
+            <>
+              <label>
+                Team A
+                <select value={teamA} onChange={(e) => setTeamA(e.target.value)}>
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Team B
+                <select value={teamB} onChange={(e) => setTeamB(e.target.value)}>
+                  {colleges.map((c) => (
+                    <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
 
           <label>
-            Team B
-            <select value={teamB} onChange={(e) => setTeamB(e.target.value)}>
-              {colleges.map((c) => (
-                <option key={c.id} value={c.id}>{c.id} · {c.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Date
+            Game Date
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
           </label>
 
@@ -1017,7 +1303,7 @@ export function EditScheduleModal({
           </label>
 
           <label>
-            Status
+            Match Status
             <select value={status} onChange={(e) => setStatus(e.target.value as GameSchedule["status"])}>
               <option value="Upcoming">Upcoming</option>
               <option value="Ongoing">Ongoing</option>
@@ -1039,7 +1325,7 @@ export function EditScheduleModal({
               fontSize: 13,
             }}
           >
-            ⚠️ <b>Venue Conflict:</b> &quot;{conflict.venue}&quot; is already booked on {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+            ⚠️ <b>Venue Conflict:</b> &quot;{conflict.venue}&quot; is already booked on {formatDate(conflict.date)} at {formatDisplayTime(conflict.time)} for <b>{conflict.event}</b> ({conflict.category} · {conflict.isAllColleges || conflict.teamA === conflict.teamB ? "All Colleges" : `${conflict.teamA} vs ${conflict.teamB}`}).
           </div>
         )}
 

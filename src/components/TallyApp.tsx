@@ -6,14 +6,18 @@ import {
   athleticsRelayCategories,
   categories,
   colleges,
+  danceSportsCategories,
   defaultRules,
   eventNeedsDetail,
   events,
+  getCategoriesForEvent,
+  isAllCollegesEvent,
+  isSubPointSport,
   rulesKeyForEvent,
   roundOptions,
   taekwondoWeightClasses,
 } from "@/lib/constants";
-import type { Role, ScoringRules, ScoreSubmission, ScoreResult, GameSchedule } from "@/lib/types";
+import type { Role, ScoringRules, ScoreSubmission, ScoreResult, GameSchedule, RuleAuditEntry } from "@/lib/types";
 import {
   PublicScheduleView,
   ScheduleManager,
@@ -50,6 +54,8 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
   const [collegeFilter, setCollegeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editingScore, setEditingScore] = useState<Score | null>(null);
+  const [viewingAuditScore, setViewingAuditScore] = useState<Score | null>(null);
+  const [rulesAuditTrail, setRulesAuditTrail] = useState<RuleAuditEntry[]>([]);
   const [schedules, setSchedules] = useState<GameSchedule[]>([]);
   const [publicTab, setPublicTab] = useState<"standings" | "schedules">("standings");
   const [recordingSchedule, setRecordingSchedule] = useState<GameSchedule | null>(null);
@@ -64,7 +70,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
     try {
       const [scoreData, ruleData, meData, schedData] = await Promise.all([
         api<{ scores: Score[]; updatedAt: string }>("/api/scores"),
-        api<{ rules: ScoringRules; rulesConfirmed: boolean }>("/api/rules"),
+        api<{ rules: ScoringRules; rulesConfirmed: boolean; rulesAuditTrail?: RuleAuditEntry[] }>("/api/rules"),
         api<{ user: User | null }>("/api/auth/me"),
         api<{ schedules: GameSchedule[] }>("/api/schedules").catch(() => ({ schedules: [] })),
       ]);
@@ -72,6 +78,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
       setUpdatedAt(scoreData.updatedAt);
       setRules(ruleData.rules);
       setRulesConfirmed(ruleData.rulesConfirmed);
+      if (ruleData.rulesAuditTrail) setRulesAuditTrail(ruleData.rulesAuditTrail);
       setUser(meData.user);
       setSchedules(schedData.schedules || []);
     } catch (e) {
@@ -258,10 +265,33 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
     }
   }
 
-  async function submitScore(event: string, category: string, detail: string, format: string, placings: Record<string, string>) {
-    const results = Object.entries(placings).filter(([, place]) => place).map(([collegeId, place]) => ({ collegeId, place }));
+  async function submitScore(
+    event: string,
+    category: string,
+    detail: string,
+    format: string,
+    placings: Record<string, string>,
+    subPoints?: Record<string, number>
+  ) {
+    const results = Object.entries(placings)
+      .filter(([, place]) => place)
+      .map(([collegeId, place]) => ({
+        collegeId,
+        place,
+        ...(subPoints?.[collegeId] !== undefined ? { subPoints: subPoints[collegeId] } : {}),
+      }));
     try {
-      await api("/api/scores", { method: "POST", body: JSON.stringify({ event, category, detail, ...(event === "Athletics" ? { format } : {}), results }) });
+      await api("/api/scores", {
+        method: "POST",
+        body: JSON.stringify({
+          event,
+          category,
+          detail,
+          ...(event === "Athletics" ? { format } : {}),
+          results,
+          ...(subPoints ? { subPoints } : {}),
+        }),
+      });
       await refresh();
       notify("Scores submitted for approval.");
     } catch (e) {
@@ -584,9 +614,9 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                       <th>EVENT</th>
                       <th>CATEGORY / DETAIL</th>
                       <th>POINTS BREAKDOWN</th>
-                      <th>SUBMITTED BY</th>
+                      <th>SUBMITTED BY &amp; AUDIT</th>
                       <th>TIME</th>
-                      <th>STATUS</th>
+                      <th>REVIEW STATUS</th>
                       <th>ACTIONS</th>
                     </tr>
                   </thead>
@@ -595,7 +625,14 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                       [...scores].reverse().map((s) => (
                         <tr key={s.id}>
                           <td><b>{s.event}</b></td>
-                          <td>{s.category}{s.detail ? ` · ${s.detail}` : ""}{s.format ? ` · ${s.format}` : ""}</td>
+                          <td>
+                            <div>{s.category}{s.detail ? ` · ${s.detail}` : ""}{s.format ? ` · ${s.format}` : ""}</div>
+                            {s.subPoints && (
+                              <span style={{ fontSize: 10, background: "#e0e7ff", color: "#3730a3", padding: "1px 6px", borderRadius: 4, fontWeight: 700, display: "inline-block", marginTop: 3 }}>
+                                ⚡ Sub-Point System
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <div className="score-chips">
                               {s.results.map((r) => {
@@ -612,14 +649,35 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                                     <span className="college-badge small" style={{ background: col?.color }}>{r.collegeId}</span>
                                     <span>{r.place}</span>
                                     <b>({r.points})</b>
+                                    {r.subPoints !== undefined && (
+                                      <small style={{ color: "var(--muted)", marginLeft: 2 }}>[{r.subPoints} sub-pts]</small>
+                                    )}
                                   </span>
                                 );
                               })}
                             </div>
                           </td>
-                          <td>{s.by}</td>
+                          <td>
+                            <div><b>{s.by}</b></div>
+                            {s.reviewedBy && (
+                              <div style={{ marginTop: 2, fontSize: 11, color: s.status === "Approved" ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                                {s.status === "Approved" ? "✓ Approved by" : "✕ Rejected by"} {s.reviewedBy}
+                              </div>
+                            )}
+                          </td>
                           <td>{new Date(s.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                          <td><span className={`status ${s.status.toLowerCase()}`}>{s.status}</span></td>
+                          <td>
+                            <span className={`status-badge ${s.status.toLowerCase()}`}>
+                              {s.status === "Pending" && "⏳ PENDING REVIEW"}
+                              {s.status === "Approved" && "✅ APPROVED"}
+                              {s.status === "Rejected" && "❌ REJECTED"}
+                            </span>
+                            <span className="status-subtext">
+                              {s.status === "Pending" && "Needs Admin Approval · Not in Tally"}
+                              {s.status === "Approved" && "Official · Counted in Medals & Points"}
+                              {s.status === "Rejected" && "Excluded from Tally"}
+                            </span>
+                          </td>
                           <td>
                             <div className="actions">
                               {s.status === "Pending" && (
@@ -629,6 +687,15 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                                 </>
                               )}
                               <button className="button edit-btn" onClick={() => setEditingScore(s)}>View / Edit</button>
+                              <button
+                                type="button"
+                                className="outline"
+                                style={{ padding: "5px 8px", fontSize: 11 }}
+                                onClick={() => setViewingAuditScore(s)}
+                                title="Inspect audit trail and provenance"
+                              >
+                                📜 Audit
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -643,7 +710,9 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
           )
         )}
 
-        {!isOfficer && tab === "rules" && <RulesEditor rules={rules} onSave={saveRules}/>}
+        {!isOfficer && tab === "rules" && (
+          <RulesEditor rules={rules} onSave={saveRules} auditTrail={rulesAuditTrail} />
+        )}
         {tab === "schedules" && (
           <ScheduleManager
             schedules={schedules}
@@ -680,6 +749,12 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         onClose={() => setEditingSchedule(null)}
         onSave={(updates) => updateSchedule(editingSchedule.id, updates)}
         onDelete={() => deleteSchedule(editingSchedule.id)}
+      />
+    )}
+    {viewingAuditScore && (
+      <AuditTrailModal
+        score={viewingAuditScore}
+        onClose={() => setViewingAuditScore(null)}
       />
     )}
     {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLogin={login}/>}
@@ -729,13 +804,352 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (email
   );
 }
 
-function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit: (event: string, category: string, detail: string, format: string, placings: Record<string, string>) => void; scores: Score[] }) {
+// ==========================================
+// AUDIT TRAIL MODAL
+// ==========================================
+function AuditTrailModal({
+  score,
+  onClose,
+}: {
+  score: Score;
+  onClose: () => void;
+}) {
+  const history = score.auditTrail && score.auditTrail.length > 0 ? score.auditTrail : [
+    {
+      action: "Submitted" as const,
+      by: score.by,
+      timestamp: score.createdAt,
+      notes: "Initial submission",
+    },
+    ...(score.reviewedBy && score.reviewedAt ? [
+      {
+        action: (score.status === "Approved" ? "Approved" : "Rejected") as "Approved" | "Rejected",
+        by: score.reviewedBy,
+        timestamp: score.reviewedAt,
+        notes: `Review status marked as ${score.status}`,
+      }
+    ] : [])
+  ];
+
+  return (
+    <div className="shade" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-edit" style={{ maxWidth: 640 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div>
+            <h2>📜 Audit Trail &amp; Provenance</h2>
+            <p>
+              <b>{score.event}</b> · {score.category}
+              {score.detail ? ` (${score.detail})` : ""}
+            </p>
+          </div>
+          <button type="button" className="outline" onClick={onClose} style={{ padding: "4px 8px" }}>✕</button>
+        </div>
+
+        {/* Current status pill */}
+        <div style={{ margin: "14px 0", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Current Status:</span>
+          <span className={`status-badge ${score.status.toLowerCase()}`}>
+            {score.status === "Pending" && "⏳ PENDING REVIEW"}
+            {score.status === "Approved" && "✅ APPROVED & TALLIED"}
+            {score.status === "Rejected" && "❌ REJECTED"}
+          </span>
+        </div>
+
+        {/* Audit Timeline */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+          {history.map((h, i) => (
+            <div
+              key={i}
+              style={{
+                padding: "10px 14px",
+                background: "var(--panel2)",
+                borderRadius: 8,
+                border: "1px solid var(--line)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: h.action === "Approved" ? "#15803d" : h.action === "Rejected" ? "#b91c1c" : "var(--foreground)" }}>
+                  {h.action === "Submitted" && "📤 "}
+                  {h.action === "Approved" && "✅ "}
+                  {h.action === "Rejected" && "❌ "}
+                  {h.action === "Edited" && "✏️ "}
+                  {h.action === "Reset to Pending" && "🔄 "}
+                  {h.action} by <b>{h.by}</b>
+                </span>
+                <small style={{ color: "var(--muted)" }}>
+                  {new Date(h.timestamp).toLocaleString()}
+                </small>
+              </div>
+              {h.notes && (
+                <div style={{ fontSize: 12, color: "#475569" }}>
+                  {h.notes}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Sub-points breakdown if present */}
+        {score.subPoints && (
+          <div style={{ marginTop: 16, padding: "12px 14px", background: "#f8fafc", borderRadius: 8, border: "1px solid #cbd5e1" }}>
+            <h4 style={{ margin: "0 0 6px", fontSize: 13, fontWeight: 700 }}>
+              ⚡ Recorded Sub-Points Breakdown
+            </h4>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 6 }}>
+              {Object.entries(score.subPoints).map(([colId, pts]) => {
+                const c = findCollege(colId);
+                return (
+                  <div key={colId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", background: "#fff", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+                    <span className="college-badge small" style={{ background: c?.color }}>{colId}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{pts} sub-pts</span>
+                  </div>
+                );
+              })}
+            </div>
+            <small style={{ display: "block", marginTop: 8, color: "#64748b", fontSize: 11 }}>
+              Official points awarded were converted using the General Point System (Champion 25, 1st Runner-Up 20, 2nd Runner-Up 15, Participation 5).
+            </small>
+          </div>
+        )}
+
+        <div className="modalfoot" style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 18 }}>
+          <button type="button" className="button primary" onClick={onClose} style={{ marginLeft: "auto" }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// SUB-POINT CALCULATOR & TEAM TALLY
+// ==========================================
+function SubPointCalculator({
+  event,
+  category,
+  onApply,
+}: {
+  event: string;
+  category: string;
+  onApply: (placings: Record<string, string>, subPoints: Record<string, number>) => void;
+}) {
+  const [subPoints, setSubPoints] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {};
+    colleges.forEach((c) => (init[c.id] = 0));
+    return init;
+  });
+
+  const handleSubPointsChange = (collegeId: string, val: number) => {
+    setSubPoints((prev) => ({
+      ...prev,
+      [collegeId]: Math.max(0, val),
+    }));
+  };
+
+  const handleAdd = (collegeId: string, delta: number) => {
+    setSubPoints((prev) => ({
+      ...prev,
+      [collegeId]: Math.max(0, (prev[collegeId] || 0) + delta),
+    }));
+  };
+
+  // Rank colleges descending by sub-points
+  const ranked = useMemo(() => {
+    const list = colleges.map((c) => ({
+      college: c,
+      points: subPoints[c.id] || 0,
+    }));
+    return list.sort((a, b) => b.points - a.points);
+  }, [subPoints]);
+
+  const hasAnyPoints = Object.values(subPoints).some((p) => p > 0);
+
+  const handleApply = () => {
+    // 1st: Champion (25 pts), 2nd: 1st Runner-Up (20 pts), 3rd: 2nd Runner-Up (15 pts), Others: Participation (5 pts)
+    const placings: Record<string, string> = {};
+    ranked.forEach((item, index) => {
+      if (item.points === 0 && !hasAnyPoints) return;
+      if (index === 0) {
+        placings[item.college.id] = "Champion";
+      } else if (index === 1) {
+        placings[item.college.id] = "1st Runner-Up";
+      } else if (index === 2) {
+        placings[item.college.id] = "2nd Runner-Up";
+      } else {
+        placings[item.college.id] = "Participation";
+      }
+    });
+
+    onApply(placings, subPoints);
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: "16px 18px",
+        background: "rgba(238, 242, 255, 0.5)",
+        border: "1px solid #c7d2fe",
+        borderRadius: 12,
+        gridColumn: "span 2",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+        <div>
+          <h4 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "#3730a3", display: "flex", alignItems: "center", gap: 6 }}>
+            ⚡ Sub-Point System &amp; Team Tally ({event} — {category})
+          </h4>
+          <p style={{ margin: 0, fontSize: 12, color: "#4338ca", lineHeight: 1.4 }}>
+            Enter sub-points earned across divisions/weight classes for <b>{category}</b>. The team with the most sub-points wins the event.
+            The department receives the <b>General Point System (25 / 20 / 15 / 5)</b>, not the raw sub-points.
+          </p>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginTop: 12 }}>
+        {colleges.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              padding: "10px 12px",
+              background: "#fff",
+              borderRadius: 8,
+              border: `1px solid ${c.border}`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="college-badge" style={{ background: c.color }}>{c.id}</span>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{c.name.split(" ")[0]}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                min={0}
+                value={subPoints[c.id] || 0}
+                onChange={(e) => handleSubPointsChange(c.id, Number(e.target.value))}
+                style={{ width: "70px", textAlign: "center", fontWeight: 700, fontSize: 14, padding: "4px" }}
+              />
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>sub-pts</span>
+            </div>
+            <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
+              <button
+                type="button"
+                className="outline"
+                style={{ padding: "2px 5px", fontSize: 10 }}
+                title="Gold / 1st (+7)"
+                onClick={() => handleAdd(c.id, 7)}
+              >
+                +7 🥇
+              </button>
+              <button
+                type="button"
+                className="outline"
+                style={{ padding: "2px 5px", fontSize: 10 }}
+                title="Silver / 2nd (+5)"
+                onClick={() => handleAdd(c.id, 5)}
+              >
+                +5 🥈
+              </button>
+              <button
+                type="button"
+                className="outline"
+                style={{ padding: "2px 5px", fontSize: 10 }}
+                title="Bronze / 3rd (+3)"
+                onClick={() => handleAdd(c.id, 3)}
+              >
+                +3 🥉
+              </button>
+              <button
+                type="button"
+                className="outline"
+                style={{ padding: "2px 5px", fontSize: 10 }}
+                title="Participation (+1)"
+                onClick={() => handleAdd(c.id, 1)}
+              >
+                +1
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Live Calculated Standings */}
+      <div style={{ marginTop: 16, background: "#fff", borderRadius: 8, border: "1px solid #e0e7ff", padding: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#3730a3", marginBottom: 8 }}>
+          📊 Projected Event Standings &amp; General Points Awarded
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6 }}>
+          {ranked.map((item, idx) => {
+            const placeTitle = idx === 0 ? "Champion (25 pts)" : idx === 1 ? "1st Runner-Up (20 pts)" : idx === 2 ? "2nd Runner-Up (15 pts)" : "Participation (5 pts)";
+            return (
+              <div
+                key={item.college.id}
+                style={{
+                  padding: "6px 8px",
+                  background: idx === 0 ? "#fefce8" : "#f8fafc",
+                  border: idx === 0 ? "1px solid #facc15" : "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span className="college-badge small" style={{ background: item.college.color }}>{item.college.id}</span>
+                  <b style={{ fontSize: 12 }}>{item.points} pts</b>
+                </div>
+                <small style={{ fontSize: 10, fontWeight: 600, color: idx === 0 ? "#854d0e" : "var(--muted)" }}>
+                  {placeTitle}
+                </small>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          className="button primary"
+          style={{ marginTop: 12, width: "100%", justifyContent: "center" }}
+          onClick={handleApply}
+          disabled={!hasAnyPoints}
+        >
+          ✓ Apply to Official Submission (General Point System)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// SCORE ENTRY
+// ==========================================
+function ScoreEntry({
+  rules,
+  onSubmit,
+  scores,
+}: {
+  rules: ScoringRules;
+  onSubmit: (event: string, category: string, detail: string, format: string, placings: Record<string, string>, subPoints?: Record<string, number>) => void;
+  scores: Score[];
+}) {
   const [event, setEvent] = useState<string>(events[0]);
-  const [category, setCategory] = useState<string>(categories[0]);
+  const [category, setCategory] = useState<string>(() => getCategoriesForEvent(events[0])[0] || "Men");
   const [format, setFormat] = useState("Individual");
   const [detail, setDetail] = useState<string>("");
   const [isCustomDetail, setIsCustomDetail] = useState(false);
   const [placings, setPlacings] = useState<Record<string, string>>({});
+  const [useSubPoints, setUseSubPoints] = useState(false);
+  const [subPointsData, setSubPointsData] = useState<Record<string, number> | undefined>(undefined);
+
+  const isSubPoint = isSubPointSport(event);
+  const allowedCategories = getCategoriesForEvent(event);
   const selectedRules = rules[rulesKeyForEvent(event, format)] ?? {};
   const isMatch = Object.keys(selectedRules).some((k) => k.startsWith("Win"));
 
@@ -743,13 +1157,18 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
     setEvent(next);
     setFormat("Individual");
     setIsCustomDetail(false);
+    setUseSubPoints(false);
+    setSubPointsData(undefined);
+    const cats = getCategoriesForEvent(next);
+    const defaultCat = cats[0] || "Men";
+    setCategory(defaultCat);
     if (next === "Athletics") {
       setDetail(athleticsIndividualCategories[0]);
     } else if (next === "Taekwondo") {
-      const list = taekwondoWeightClasses[category as "Men" | "Women"] ?? taekwondoWeightClasses.Men;
+      const list = taekwondoWeightClasses[defaultCat as "Men" | "Women"] ?? taekwondoWeightClasses.Men;
       setDetail(list[0]);
     } else if (next === "Arnis") {
-      const list = arnisWeightClasses[category as "Men" | "Women"] ?? arnisWeightClasses.Men;
+      const list = arnisWeightClasses[defaultCat as "Men" | "Women"] ?? arnisWeightClasses.Men;
       setDetail(list[0]);
     } else {
       setDetail("");
@@ -776,6 +1195,13 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
     setPlacings({});
   }
 
+  const handleApplySubPoints = (newPlacings: Record<string, string>, subPts: Record<string, number>) => {
+    setPlacings(newPlacings);
+    setSubPointsData(subPts);
+    if (!detail) setDetail(`Overall Team Tally (${category})`);
+    setUseSubPoints(false);
+  };
+
   return <>
     <section className="panel entry">
       <h2>Submit event scores</h2>
@@ -789,164 +1215,202 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
         </label>
 
         <label>
-          Division / gender
+          {event === "Dance Sports" ? "Dance Sports Category" : "Division / Category"}
           <select value={category} onChange={(e) => changeCategory(e.target.value)}>
-            {categories.map((item) => <option key={item}>{item}</option>)}
+            {allowedCategories.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
 
-        {event === "Athletics" && (
-          <label>
-            Event type
-            <select value={format} onChange={(e) => changeFormat(e.target.value)}>
-              <option value="Individual">Individual event</option>
-              <option value="Relay">Relay event</option>
-            </select>
-          </label>
+        {isSubPoint && (
+          <div style={{ gridColumn: "span 2", display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Scoring Method:</span>
+            <button
+              type="button"
+              className={!useSubPoints ? "button primary" : "outline"}
+              style={{ padding: "4px 10px", fontSize: 11 }}
+              onClick={() => setUseSubPoints(false)}
+            >
+              Standard Placing Form
+            </button>
+            <button
+              type="button"
+              className={useSubPoints ? "button primary" : "outline"}
+              style={{ padding: "4px 10px", fontSize: 11 }}
+              onClick={() => setUseSubPoints(true)}
+            >
+              ⚡ Sub-Point Calculator &amp; Team Tally ({category})
+            </button>
+          </div>
         )}
 
-        {event === "Athletics" ? (
+        {useSubPoints && isSubPoint ? (
+          <SubPointCalculator
+            event={event}
+            category={category}
+            onApply={handleApplySubPoints}
+          />
+        ) : (
           <>
-            <label>
-              Athletics category
-              <select
-                value={isCustomDetail ? "__custom__" : detail}
-                onChange={(e) => {
-                  if (e.target.value === "__custom__") {
-                    setIsCustomDetail(true);
-                    setDetail("");
-                  } else {
-                    setIsCustomDetail(false);
-                    setDetail(e.target.value);
-                  }
-                }}
-              >
-                {format === "Relay" ? (
-                  <optgroup label="Relay Events">
-                    {athleticsRelayCategories.map((item) => (
+            {event === "Athletics" && (
+              <label>
+                Event type
+                <select value={format} onChange={(e) => changeFormat(e.target.value)}>
+                  <option value="Individual">Individual event</option>
+                  <option value="Relay">Relay event</option>
+                </select>
+              </label>
+            )}
+
+            {event === "Athletics" ? (
+              <>
+                <label>
+                  Athletics category
+                  <select
+                    value={isCustomDetail ? "__custom__" : detail}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setIsCustomDetail(true);
+                        setDetail("");
+                      } else {
+                        setIsCustomDetail(false);
+                        setDetail(e.target.value);
+                      }
+                    }}
+                  >
+                    {format === "Relay" ? (
+                      <optgroup label="Relay Events">
+                        {athleticsRelayCategories.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <>
+                        <optgroup label="Track Events (Running & Hurdles)">
+                          {athleticsIndividualCategories
+                            .filter((c) => c.includes("Run") || c.includes("Dash") || c.includes("Hurdles"))
+                            .map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                        </optgroup>
+                        <optgroup label="Field Events (Jumps & Throws)">
+                          {athleticsIndividualCategories
+                            .filter((c) => !c.includes("Run") && !c.includes("Dash") && !c.includes("Hurdles"))
+                            .map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                        </optgroup>
+                      </>
+                    )}
+                    <option value="__custom__">Other (Custom category)...</option>
+                  </select>
+                </label>
+
+                {isCustomDetail && (
+                  <label>
+                    Custom athletics category
+                    <input
+                      required
+                      value={detail}
+                      maxLength={100}
+                      onChange={(e) => setDetail(e.target.value)}
+                      placeholder="e.g. Pole Vault"
+                    />
+                  </label>
+                )}
+              </>
+            ) : event === "Taekwondo" ? (
+              <>
+                <label>
+                  Taekwondo weight class ({category})
+                  <select
+                    value={isCustomDetail ? "__custom__" : detail}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setIsCustomDetail(true);
+                        setDetail("");
+                      } else {
+                        setIsCustomDetail(false);
+                        setDetail(e.target.value);
+                      }
+                    }}
+                  >
+                    {(taekwondoWeightClasses[category as "Men" | "Women"] ?? taekwondoWeightClasses.Men).map((item) => (
                       <option key={item} value={item}>{item}</option>
                     ))}
-                  </optgroup>
-                ) : (
-                  <>
-                    <optgroup label="Track Events (Running & Hurdles)">
-                      {athleticsIndividualCategories
-                        .filter((c) => c.includes("Run") || c.includes("Dash") || c.includes("Hurdles"))
-                        .map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                    </optgroup>
-                    <optgroup label="Field Events (Jumps & Throws)">
-                      {athleticsIndividualCategories
-                        .filter((c) => !c.includes("Run") && !c.includes("Dash") && !c.includes("Hurdles"))
-                        .map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                    </optgroup>
-                  </>
+                    <option value="__custom__">Other (Custom weight class)...</option>
+                  </select>
+                </label>
+
+                {isCustomDetail && (
+                  <label>
+                    Custom Taekwondo weight class
+                    <input
+                      required
+                      value={detail}
+                      maxLength={100}
+                      onChange={(e) => setDetail(e.target.value)}
+                      placeholder="e.g. Under 50 kg"
+                    />
+                  </label>
                 )}
-                <option value="__custom__">Other (Custom category)...</option>
-              </select>
-            </label>
+              </>
+            ) : event === "Arnis" ? (
+              <>
+                <label>
+                  Arnis weight class ({category})
+                  <select
+                    value={isCustomDetail ? "__custom__" : detail}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setIsCustomDetail(true);
+                        setDetail("");
+                      } else {
+                        setIsCustomDetail(false);
+                        setDetail(e.target.value);
+                      }
+                    }}
+                  >
+                    {(arnisWeightClasses[category as "Men" | "Women"] ?? arnisWeightClasses.Men).map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                    <option value="__custom__">Other (Custom weight class)...</option>
+                  </select>
+                </label>
 
-            {isCustomDetail && (
+                {isCustomDetail && (
+                  <label>
+                    Custom Arnis weight class
+                    <input
+                      required
+                      value={detail}
+                      maxLength={100}
+                      onChange={(e) => setDetail(e.target.value)}
+                      placeholder="e.g. Under 45 kg"
+                    />
+                  </label>
+                )}
+              </>
+            ) : (
               <label>
-                Custom athletics category
+                {isMatch ? "Match / round" : "Competition detail (optional)"}
                 <input
-                  required
                   value={detail}
+                  required={eventNeedsDetail(event)}
                   maxLength={100}
                   onChange={(e) => setDetail(e.target.value)}
-                  placeholder="e.g. Pole Vault"
+                  placeholder={isMatch ? "e.g. Match 1" : "Optional detail"}
                 />
               </label>
             )}
           </>
-        ) : event === "Taekwondo" ? (
-          <>
-            <label>
-              Taekwondo weight class ({category})
-              <select
-                value={isCustomDetail ? "__custom__" : detail}
-                onChange={(e) => {
-                  if (e.target.value === "__custom__") {
-                    setIsCustomDetail(true);
-                    setDetail("");
-                  } else {
-                    setIsCustomDetail(false);
-                    setDetail(e.target.value);
-                  }
-                }}
-              >
-                {(taekwondoWeightClasses[category as "Men" | "Women"] ?? taekwondoWeightClasses.Men).map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-                <option value="__custom__">Other (Custom weight class)...</option>
-              </select>
-            </label>
-
-            {isCustomDetail && (
-              <label>
-                Custom Taekwondo weight class
-                <input
-                  required
-                  value={detail}
-                  maxLength={100}
-                  onChange={(e) => setDetail(e.target.value)}
-                  placeholder="e.g. Under 50 kg"
-                />
-              </label>
-            )}
-          </>
-        ) : event === "Arnis" ? (
-          <>
-            <label>
-              Arnis weight class ({category})
-              <select
-                value={isCustomDetail ? "__custom__" : detail}
-                onChange={(e) => {
-                  if (e.target.value === "__custom__") {
-                    setIsCustomDetail(true);
-                    setDetail("");
-                  } else {
-                    setIsCustomDetail(false);
-                    setDetail(e.target.value);
-                  }
-                }}
-              >
-                {(arnisWeightClasses[category as "Men" | "Women"] ?? arnisWeightClasses.Men).map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-                <option value="__custom__">Other (Custom weight class)...</option>
-              </select>
-            </label>
-
-            {isCustomDetail && (
-              <label>
-                Custom Arnis weight class
-                <input
-                  required
-                  value={detail}
-                  maxLength={100}
-                  onChange={(e) => setDetail(e.target.value)}
-                  placeholder="e.g. Under 45 kg"
-                />
-              </label>
-            )}
-          </>
-        ) : (
-          <label>
-            {isMatch ? "Match / round" : "Competition detail (optional)"}
-            <input
-              value={detail}
-              required={eventNeedsDetail(event)}
-              maxLength={100}
-              onChange={(e) => setDetail(e.target.value)}
-              placeholder={isMatch ? "e.g. Match 1" : "Optional detail"}
-            />
-          </label>
         )}
       </div>
+
+      {subPointsData && (
+        <div style={{ marginTop: 12, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, fontSize: 12, color: "#166534" }}>
+          ⚡ <b>Sub-points applied for {category}:</b> Points have been assigned using the General Point System (25 / 20 / 15 / 5) based on sub-points.
+        </div>
+      )}
 
       <div className="caption">{isMatch ? "SELECT THE BO3 RESULT FOR BOTH COLLEGES IN THIS MATCH" : "ENTER EACH COLLEGE'S PLACING OR RESULT"}</div>
       <div className="formgrid collegesform">
@@ -971,7 +1435,7 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
         <button
           className="button primary"
           disabled={eventNeedsDetail(event) && !detail.trim()}
-          onClick={() => onSubmit(event, category, detail.trim(), format, placings)}
+          onClick={() => onSubmit(event, category, detail.trim(), format, placings, subPointsData)}
         >
           Submit for approval →
         </button>
@@ -986,8 +1450,24 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
             <span>
               <b>{score.event} · {score.category}{score.detail ? ` · ${score.detail}` : ""}{score.format ? ` · ${score.format}` : ""}</b>
               <small>{new Date(score.createdAt).toLocaleString()}</small>
+              {score.reviewedBy && (
+                <small style={{ color: score.status === "Approved" ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                  {score.status === "Approved" ? "✓ Approved by" : "✕ Rejected by"} {score.reviewedBy}
+                </small>
+              )}
             </span>
-            <span className={`status ${score.status.toLowerCase()}`}>{score.status}</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+              <span className={`status-badge ${score.status.toLowerCase()}`}>
+                {score.status === "Pending" && "⏳ PENDING REVIEW"}
+                {score.status === "Approved" && "✅ APPROVED"}
+                {score.status === "Rejected" && "❌ REJECTED"}
+              </span>
+              <span className="status-subtext" style={{ textAlign: "right" }}>
+                {score.status === "Pending" && "Awaiting Admin Approval"}
+                {score.status === "Approved" && "Counted in Live Tally"}
+                {score.status === "Rejected" && "Excluded from Tally"}
+              </span>
+            </div>
           </div>
         ))
       ) : (
@@ -997,7 +1477,18 @@ function ScoreEntry({ rules, onSubmit, scores }: { rules: ScoringRules; onSubmit
   </>;
 }
 
-function RulesEditor({ rules, onSave }: { rules: ScoringRules; onSave: (rules: ScoringRules) => void }) {
+// ==========================================
+// SCORING RULES EDITOR
+// ==========================================
+function RulesEditor({
+  rules,
+  onSave,
+  auditTrail,
+}: {
+  rules: ScoringRules;
+  onSave: (rules: ScoringRules) => void;
+  auditTrail?: RuleAuditEntry[];
+}) {
   const [values, setValues] = useState(rules);
   const [selectedEvent, setSelectedEvent] = useState(Object.keys(rules)[0] ?? "");
   useEffect(() => {
@@ -1007,12 +1498,18 @@ function RulesEditor({ rules, onSave }: { rules: ScoringRules; onSave: (rules: S
 
   return <section className="panel rulepanel">
     <div className="warning">Set the points for each sport and event type. Changes apply to new submissions; existing submissions keep their saved points.</div>
-    <label>
-      Sport / event
-      <select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)}>
-        {Object.keys(values).map((event) => <option key={event}>{event}</option>)}
-      </select>
-    </label>
+    <div className="rule-event-select-group" style={{ margin: "16px 0 20px" }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: "8px", font: "600 11px 'Inter'", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        Sport / event
+        <select
+          value={selectedEvent}
+          onChange={(e) => setSelectedEvent(e.target.value)}
+          style={{ width: "100%", padding: "10px 14px", font: "500 14px 'Inter'", borderRadius: "8px", border: "1px solid var(--line)" }}
+        >
+          {Object.keys(values).map((event) => <option key={event}>{event}</option>)}
+        </select>
+      </label>
+    </div>
     <div className="rulegrid">
       {Object.entries(values[selectedEvent] ?? {}).map(([place, points]) => (
         <label key={place}>
@@ -1034,6 +1531,26 @@ function RulesEditor({ rules, onSave }: { rules: ScoringRules; onSave: (rules: S
       <small>Points are configured separately for each event and apply to both categories.</small>
       <button className="button primary" onClick={() => onSave(values)}>Save scoring rules</button>
     </div>
+
+    {auditTrail && auditTrail.length > 0 && (
+      <div style={{ marginTop: 24, padding: "16px", background: "var(--panel2)", borderRadius: 10, border: "1px solid var(--line)" }}>
+        <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+          📜 Rules Revision History &amp; Audit Trail
+        </h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {auditTrail.slice(-6).reverse().map((entry, idx) => (
+            <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#fff", borderRadius: 6, border: "1px solid var(--line)", fontSize: 12 }}>
+              <div>
+                <b>{entry.updatedBy}</b>: <span style={{ color: "#334155" }}>{entry.summary}</span>
+              </div>
+              <small style={{ color: "var(--muted)", whiteSpace: "nowrap", marginLeft: 12 }}>
+                {new Date(entry.updatedAt).toLocaleString()}
+              </small>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
   </section>;
 }
 

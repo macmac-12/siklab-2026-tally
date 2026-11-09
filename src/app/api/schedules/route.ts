@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/db";
+import { isAllCollegesEvent } from "@/lib/constants";
 import type { GameSchedule } from "@/lib/types";
 
 function isEgame(event: string) {
@@ -45,7 +46,7 @@ function normalizeTime(t: string): string {
 }
 
 function normalizeVenue(v: string) {
-  return v.trim().toLowerCase().replace(/\s+/g, " ");
+  return v ? v.trim().toLowerCase().replace(/\s+/g, " ") : "";
 }
 
 function findVenueConflict(
@@ -84,8 +85,13 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Officer or admin access required." }, { status: 403 });
 
   const body = await request.json().catch(() => null);
-  if (!body?.event || !body?.category || !body?.teamA || !body?.teamB || !body?.date || !body?.time) {
-    return NextResponse.json({ error: "Event, category, teams, date, and time are required." }, { status: 400 });
+  const isAllColleges = isAllCollegesEvent(String(body?.event || "").trim());
+  const teamA = isAllColleges ? "All Colleges" : String(body?.teamA || "").trim();
+  const teamB = isAllColleges ? "All Colleges" : String(body?.teamB || "").trim();
+  const category = String(body?.category || (isAllColleges ? "All Colleges / Open" : "")).trim();
+
+  if (!body?.event || !category || (!isAllColleges && (!teamA || !teamB)) || !body?.date || !body?.time) {
+    return NextResponse.json({ error: "Event, category, date, and time are required." }, { status: 400 });
   }
 
   const db = await readDb();
@@ -101,9 +107,12 @@ export async function POST(request: Request) {
   });
 
   if (conflict) {
+    const matchupText = conflict.isAllColleges || conflict.teamA === conflict.teamB
+      ? "All Colleges"
+      : `${conflict.teamA} vs ${conflict.teamB}`;
     return NextResponse.json(
       {
-        error: `Venue Conflict: "${conflict.venue}" is already booked on ${conflict.date} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}). Only 1 event per venue is allowed at the same time (except for E-Games).`,
+        error: `Venue Conflict: "${conflict.venue}" is already booked on ${conflict.date} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${matchupText}). Only 1 event per venue is allowed at the same time (except for E-Games).`,
       },
       { status: 409 }
     );
@@ -112,11 +121,11 @@ export async function POST(request: Request) {
   const newSchedule: GameSchedule = {
     id: crypto.randomUUID(),
     event: String(body.event).trim(),
-    category: String(body.category).trim(),
+    category,
     detail: body.detail ? String(body.detail).trim() : undefined,
-    round: String(body.round || "Eliminations").trim(),
-    teamA: String(body.teamA).trim(),
-    teamB: String(body.teamB).trim(),
+    round: String(body.round || (isAllColleges ? "Showcase / Competition" : "Eliminations")).trim(),
+    teamA,
+    teamB,
     date: String(body.date).trim(),
     time: formatDisplayTime(String(body.time).trim()),
     venue,
@@ -126,6 +135,7 @@ export async function POST(request: Request) {
     scoreB: body.scoreB !== undefined ? String(body.scoreB).trim() : undefined,
     createdBy: user.name,
     createdAt: new Date().toISOString(),
+    isAllColleges,
   };
 
   await updateDb((database) => {
@@ -167,9 +177,12 @@ export async function PATCH(request: Request) {
   });
 
   if (conflict) {
+    const matchupText = conflict.isAllColleges || conflict.teamA === conflict.teamB
+      ? "All Colleges"
+      : `${conflict.teamA} vs ${conflict.teamB}`;
     return NextResponse.json(
       {
-        error: `Venue Conflict: "${conflict.venue}" is already booked on ${conflict.date} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}). Only 1 event per venue is allowed at the same time (except for E-Games).`,
+        error: `Venue Conflict: "${conflict.venue}" is already booked on ${conflict.date} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${matchupText}). Only 1 event per venue is allowed at the same time (except for E-Games).`,
       },
       { status: 409 }
     );
@@ -182,7 +195,10 @@ export async function PATCH(request: Request) {
     const item = database.schedules.find((s) => s.id === body.id);
     if (!item) return;
 
-    if (body.event !== undefined) item.event = String(body.event).trim();
+    if (body.event !== undefined) {
+      item.event = String(body.event).trim();
+      item.isAllColleges = isAllCollegesEvent(item.event);
+    }
     if (body.category !== undefined) item.category = String(body.category).trim();
     if (body.detail !== undefined) item.detail = body.detail ? String(body.detail).trim() : undefined;
     if (body.round !== undefined) item.round = String(body.round).trim();
@@ -195,6 +211,7 @@ export async function PATCH(request: Request) {
     if (body.winner !== undefined) item.winner = body.winner ? String(body.winner).trim() : undefined;
     if (body.scoreA !== undefined) item.scoreA = body.scoreA ? String(body.scoreA).trim() : undefined;
     if (body.scoreB !== undefined) item.scoreB = body.scoreB ? String(body.scoreB).trim() : undefined;
+    if (body.isAllColleges !== undefined) item.isAllColleges = body.isAllColleges;
 
     updatedSchedule = item;
   });
@@ -214,11 +231,12 @@ export async function DELETE(request: Request) {
   let removed = false;
   await updateDb((db) => {
     if (!Array.isArray(db.schedules)) return;
-    const initialLen = db.schedules.length;
-    db.schedules = db.schedules.filter((s) => s.id !== id);
-    removed = db.schedules.length < initialLen;
+    const index = db.schedules.findIndex((s) => s.id === id);
+    if (index !== -1) {
+      db.schedules.splice(index, 1);
+      removed = true;
+    }
   });
 
-  if (!removed) return NextResponse.json({ error: "Schedule not found." }, { status: 404 });
-  return NextResponse.json({ ok: true });
+  return removed ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "Schedule not found." }, { status: 404 });
 }

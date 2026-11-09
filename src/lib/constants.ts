@@ -242,3 +242,65 @@ export function rulesKeyForEvent(event: string, format?: string) {
 export function eventNeedsDetail(event: string) {
   return event === "Athletics" || event === "Taekwondo" || event === "Arnis" || event.startsWith("E-games") || event === "E-Games";
 }
+
+export const danceSportsCategories = ["Latin", "Standard", "Third Kind"] as const;
+
+export const culturalAndSpecialEvents = [
+  "Hip-Hop",
+  "Folkdance",
+  "Contemporary Dance",
+  "Dance Sports",
+  "Extemporaneous Speaking",
+  "Dagliang Talumpati",
+  "Story Telling",
+  "Pagkwekwento",
+  "Pagsulat ng Sanaysay",
+  "Essay Writing",
+  "Pop Solo",
+  "Kundiman",
+  "Instrumental Solo",
+  "Vocal Duet",
+  "Quartet",
+  "Radio Drama",
+  "Photography",
+  "Charcoal Rendering",
+  "Pencil Drawing",
+  "On the Spot Poster Making",
+  "Painting",
+  "Quiz Bowl/Academic Contest",
+  "Mr. and Ms. Intrams",
+] as const;
+
+export const subPointSports = ["Athletics", "Taekwondo", "Arnis"] as const;
+
+export function isAllCollegesEvent(event: string): boolean {
+  if (event === "Athletics" || event.startsWith("Athletics —")) return true;
+  return culturalAndSpecialEvents.some((e) => e === event);
+}
+
+export function isSubPointSport(event: string): boolean {
+  return subPointSports.some((s) => s === event || event.startsWith(`${s} —`));
+}
+
+export function getCategoriesForEvent(event: string): readonly string[] {
+  if (event === "Dance Sports") {
+    return danceSportsCategories;
+  }
+  if (event === "Mr. and Ms. Intrams") {
+    return ["Men", "Women"] as const;
+  }
+  if (isAllCollegesEvent(event) && event !== "Athletics") {
+    return ["All Colleges / Open"] as const;
+  }
+  if (event === "Taekwondo" || event === "Arnis" || event === "Athletics") {
+    return ["Men", "Women"] as const;
+  }
+  return ["Men", "Women", "Mixed / Open"] as const;
+}
+
+export function getRoundOptionsForEvent(event: string): readonly string[] {
+  if (isAllCollegesEvent(event)) {
+    return ["Showcase / Competition", "Finals", "Preliminaries"] as const;
+  }
+  return roundOptions;
+}

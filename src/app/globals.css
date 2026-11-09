@@ -118,6 +118,14 @@ td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
 .status.pending{background:#fef3c7;color:#92400e}
 .status.approved{background:#d1fae5;color:#065f46}
 .status.rejected{background:#fee2e2;color:#991b1b}
+
+/* High-contrast status badges */
+.status-badge{display:inline-flex;align-items:center;gap:5px;font:700 11px 'Inter';padding:4px 10px;border-radius:6px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.status-badge.pending{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.status-badge.approved{background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7}
+.status-badge.rejected{background:#fef2f2;color:#991b1b;border:1px solid #fca5a5}
+.status-subtext{display:block;font-size:10px;margin-top:3px;font-weight:600;line-height:1.2}
+
 .actions{display:flex;gap:6px}
 .actions button{padding:6px 10px}
 .button.reject{color:#dc2626;border-color:#fca5a5}
@@ -144,6 +152,8 @@ td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
 
 /* Rules editor */
 .rulepanel{padding:18px}
+.rulepanel>label,.rule-event-select-group>label{display:flex;flex-direction:column;gap:8px;font:600 11px 'Inter';color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 18px}
+.rulepanel select{font:500 14px 'Inter';padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#fff}
 .rulegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .rulegrid label{background:var(--panel2);padding:12px;border-radius:8px;font:600 13px 'Inter';border:1px solid var(--line)}
 .rulegrid label span{display:flex;align-items:center;gap:8px;margin-top:8px;font:500 10px 'Inter';color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
