@@ -679,6 +679,7 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
     {editingSchedule && (
       <EditScheduleModal
         schedule={editingSchedule}
+        schedules={schedules}
         onClose={() => setEditingSchedule(null)}
         onSave={(updates) => updateSchedule(editingSchedule.id, updates)}
         onDelete={() => deleteSchedule(editingSchedule.id)}

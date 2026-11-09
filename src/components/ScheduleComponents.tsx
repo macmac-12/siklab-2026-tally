@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   arnisWeightClasses,
   athleticsIndividualCategories,
@@ -13,11 +13,11 @@ import {
 } from "@/lib/constants";
 import type { GameSchedule } from "@/lib/types";
 
-function findCollege(id: string) {
+export function findCollege(id: string) {
   return colleges.find((c) => c.id === id);
 }
 
-function formatDate(dateStr: string) {
+export function formatDate(dateStr: string) {
   if (!dateStr) return "";
   const parts = dateStr.split("-");
   if (parts.length === 3) {
@@ -27,6 +27,52 @@ function formatDate(dateStr: string) {
     }
   }
   return dateStr;
+}
+
+export function isEgame(event: string) {
+  const norm = event.toLowerCase();
+  return norm.includes("e-game") || norm.includes("egame") || norm.includes("codm") || norm.includes("mlbb");
+}
+
+export function normalizeTime(t: string) {
+  if (!t) return "";
+  const s = t.trim().toLowerCase().replace(/\s+/g, "");
+  const m = s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+  if (m) {
+    const hh = m[1].padStart(2, "0");
+    const mm = m[2];
+    const ampm = m[3] || "";
+    return `${hh}:${mm}${ampm}`;
+  }
+  return s;
+}
+
+export function normalizeVenue(v: string) {
+  return v.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function findVenueConflict(
+  schedules: GameSchedule[],
+  target: { id?: string; event: string; date: string; time: string; venue: string }
+): GameSchedule | null {
+  const targetVenue = normalizeVenue(target.venue);
+  const targetTime = normalizeTime(target.time);
+  const targetDate = target.date.trim();
+  const targetIsEgame = isEgame(target.event);
+
+  for (const s of schedules) {
+    if (target.id && s.id === target.id) continue;
+    if (s.date.trim() !== targetDate) continue;
+    if (normalizeTime(s.time) !== targetTime) continue;
+    if (normalizeVenue(s.venue) !== targetVenue) continue;
+
+    const existingIsEgame = isEgame(s.event);
+    // Conflict if either is NOT an E-game
+    if (!targetIsEgame || !existingIsEgame) {
+      return s;
+    }
+  }
+  return null;
 }
 
 // ==========================================
@@ -234,10 +280,22 @@ export function ScheduleManager({
   const [eventFilter, setEventFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // Real-time venue conflict detection
+  const conflict = useMemo(() => {
+    if (!venue || !date || !time) return null;
+    return findVenueConflict(schedules, { event, date, time, venue });
+  }, [schedules, event, date, time, venue]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (teamA === teamB) {
       alert("Team A and Team B must be different colleges.");
+      return;
+    }
+    if (conflict) {
+      alert(
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+      );
       return;
     }
     onCreate({
@@ -265,7 +323,7 @@ export function ScheduleManager({
       <section className="panel entry" style={{ marginBottom: "1.5rem" }}>
         <h2>Assign Game Schedule</h2>
         <p style={{ fontSize: "0.875rem", color: "var(--muted)", margin: "0.25rem 0 1.25rem" }}>
-          Schedule official intramural matches between colleges for any sport, round, and venue.
+          Schedule official intramural matches between colleges. Only 1 event is permitted per venue at the same time (except for E-Games).
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -404,9 +462,47 @@ export function ScheduleManager({
             </label>
           </div>
 
+          {/* Real-time Conflict Warning Banner */}
+          {conflict && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px 16px",
+                background: "#fef2f2",
+                border: "1px solid #f87171",
+                borderRadius: 8,
+                color: "#991b1b",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <div>
+                <b>Venue Conflict Detected:</b> &quot;{conflict.venue}&quot; is already booked on{" "}
+                {formatDate(conflict.date)} at {conflict.time} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+                <div style={{ marginTop: 2, fontSize: 12, color: "#b91c1c" }}>
+                  Only 1 event per venue is allowed at the same time (except for E-Games). Please choose a different venue or time.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="formactions" style={{ marginTop: 14 }}>
-            <small>Assigned games will appear on both the public schedule and the officer console.</small>
-            <button type="submit" className="button primary">Assign game schedule</button>
+            <small>
+              {conflict
+                ? "⚠️ Cannot schedule: Selected venue is already occupied at this date and time."
+                : "Assigned games will appear on both the public schedule and the officer console."}
+            </small>
+            <button
+              type="submit"
+              className="button primary"
+              disabled={!!conflict}
+              style={conflict ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+            >
+              Assign game schedule
+            </button>
           </div>
         </form>
       </section>
@@ -452,8 +548,16 @@ export function ScheduleManager({
                 [...filtered].reverse().map((s) => {
                   const colA = findCollege(s.teamA);
                   const colB = findCollege(s.teamB);
+                  const hasConflict = findVenueConflict(schedules, {
+                    id: s.id,
+                    event: s.event,
+                    date: s.date,
+                    time: s.time,
+                    venue: s.venue,
+                  });
+
                   return (
-                    <tr key={s.id}>
+                    <tr key={s.id} style={hasConflict ? { background: "rgba(254, 242, 242, 0.6)" } : undefined}>
                       <td>
                         <b>{s.event}</b>
                         <small style={{ display: "block", color: "var(--muted)" }}>
@@ -476,7 +580,29 @@ export function ScheduleManager({
                         <div>{formatDate(s.date)}</div>
                         <small style={{ color: "var(--muted)" }}>{s.time}</small>
                       </td>
-                      <td>{s.venue}</td>
+                      <td>
+                        <div>{s.venue}</div>
+                        {hasConflict && (
+                          <span
+                            title={`Conflicts with ${hasConflict.event} (${hasConflict.category})`}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 3,
+                              color: "#dc2626",
+                              fontWeight: 700,
+                              fontSize: 10,
+                              background: "#fee2e2",
+                              border: "1px solid #fca5a5",
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              marginTop: 3,
+                            }}
+                          >
+                            ⚠️ Venue Conflict
+                          </span>
+                        )}
+                      </td>
                       <td>
                         <span className={`status-pill ${s.status.toLowerCase()}`}>
                           {s.status}
@@ -716,11 +842,13 @@ export function RecordResultModal({
 // ==========================================
 export function EditScheduleModal({
   schedule,
+  schedules,
   onClose,
   onSave,
   onDelete,
 }: {
   schedule: GameSchedule;
+  schedules: GameSchedule[];
   onClose: () => void;
   onSave: (updates: Partial<GameSchedule>) => void;
   onDelete: () => void;
@@ -736,10 +864,22 @@ export function EditScheduleModal({
   const [venue, setVenue] = useState(schedule.venue);
   const [status, setStatus] = useState<GameSchedule["status"]>(schedule.status);
 
+  // Real-time conflict check
+  const conflict = useMemo(() => {
+    if (!venue || !date || !time) return null;
+    return findVenueConflict(schedules, { id: schedule.id, event, date, time, venue });
+  }, [schedules, schedule.id, event, date, time, venue]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (teamA === teamB) {
       alert("Team A and Team B must be different colleges.");
+      return;
+    }
+    if (conflict) {
+      alert(
+        `Venue Conflict: "${conflict.venue}" is already booked on ${formatDate(conflict.date)} at ${conflict.time} for ${conflict.event} (${conflict.category} · ${conflict.teamA} vs ${conflict.teamB}).\n\nOnly 1 event per venue is allowed at the same time (except for E-Games).`
+      );
       return;
     }
     onSave({
@@ -847,6 +987,23 @@ export function EditScheduleModal({
           </label>
         </div>
 
+        {/* Real-time Conflict Warning in Modal */}
+        {conflict && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "10px 14px",
+              background: "#fef2f2",
+              border: "1px solid #f87171",
+              borderRadius: 8,
+              color: "#991b1b",
+              fontSize: 13,
+            }}
+          >
+            ⚠️ <b>Venue Conflict:</b> &quot;{conflict.venue}&quot; is already booked on {formatDate(conflict.date)} at {conflict.time} for <b>{conflict.event}</b> ({conflict.category} · {conflict.teamA} vs {conflict.teamB}).
+          </div>
+        )}
+
         <div className="modalfoot" style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 18 }}>
           <button type="button" className="button danger" onClick={onDelete}>
             Delete schedule
@@ -855,7 +1012,12 @@ export function EditScheduleModal({
             <button type="button" className="outline" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="button primary">
+            <button
+              type="submit"
+              className="button primary"
+              disabled={!!conflict}
+              style={conflict ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+            >
               Save changes
             </button>
           </div>
