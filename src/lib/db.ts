@@ -33,6 +33,15 @@ let queue: Promise<unknown> = Promise.resolve();
 
 type RulesData = Pick<Database, "rules" | "rulesConfirmed">;
 
+export function getStorageMode(): { backend: "supabase" | "local"; connected: boolean } {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (url && key) {
+    return { backend: "supabase", connected: true };
+  }
+  return { backend: "local", connected: false };
+}
+
 function getSupabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

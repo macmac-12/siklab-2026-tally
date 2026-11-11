@@ -108,14 +108,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireRole(["admin", "superadmin"]);
-  if (!user) return NextResponse.json({ error: "Administrator access required." }, { status: 403 });
+  const user = await requireRole(["officer", "admin", "superadmin"]);
+  if (!user) return NextResponse.json({ error: "Access required." }, { status: 403 });
   const { id } = await params;
+
+  let notAllowedReason: string | null = null;
   const deleted = await updateDb((db) => {
     const index = db.scores.findIndex((s) => s.id === id);
     if (index === -1) return false;
+    const target = db.scores[index];
+
+    // Officers can only delete their own submissions, and ONLY if status is "Pending"
+    if (user.role === "officer") {
+      if (target.by !== user.name) {
+        notAllowedReason = "Officers can only withdraw their own submissions.";
+        return false;
+      }
+      if (target.status !== "Pending") {
+        notAllowedReason = "Only Pending submissions can be withdrawn by officers. Contact an administrator.";
+        return false;
+      }
+    }
+
     db.scores.splice(index, 1);
     return true;
   });
+
+  if (notAllowedReason) {
+    return NextResponse.json({ error: notAllowedReason }, { status: 403 });
+  }
+
   return deleted ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "Submission not found." }, { status: 404 });
 }

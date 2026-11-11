@@ -15,7 +15,7 @@ import {
   roundOptions,
   taekwondoWeightClasses,
 } from "@/lib/constants";
-import type { GameSchedule } from "@/lib/types";
+import type { GameSchedule, ScoreSubmission } from "@/lib/types";
 
 export function findCollege(id: string) {
   return colleges.find((c) => c.id === id);
@@ -181,6 +181,15 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
           </p>
         </div>
         <div className="filters sched-filters">
+          <button
+            type="button"
+            className="outline"
+            onClick={() => window.print()}
+            style={{ padding: "7px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}
+            title="Print schedule / Save as PDF"
+          >
+            🖨️ Print
+          </button>
           <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
             <option value="all">All sports / events</option>
             {events.map((ev) => (
@@ -400,12 +409,15 @@ export function PublicScheduleView({ schedules }: { schedules: GameSchedule[] })
 // ==========================================
 export function ScheduleManager({
   schedules,
+  scores,
   onCreate,
   onOpenRecord,
   onOpenEdit,
   onDelete,
+  onForwardToTally,
 }: {
   schedules: GameSchedule[];
+  scores?: ScoreSubmission[];
   onCreate: (form: {
     event: string;
     category: string;
@@ -420,6 +432,7 @@ export function ScheduleManager({
   onOpenRecord: (schedule: GameSchedule) => void;
   onOpenEdit: (schedule: GameSchedule) => void;
   onDelete: (id: string) => void;
+  onForwardToTally?: (schedule: GameSchedule) => void;
 }) {
   const [event, setEvent] = useState<string>("Basketball");
   const [category, setCategory] = useState<string>("Men");
@@ -890,6 +903,69 @@ export function ScheduleManager({
                             <small style={{ display: "block", color: "#64748b", fontSize: 10, marginTop: 3 }}>
                               ℹ️ Match result · Official tally in Submissions
                             </small>
+
+                            {/* Tally integration status */}
+                            {(() => {
+                              const linkedScore = scores?.find(
+                                (sc) =>
+                                  sc.event === s.event &&
+                                  (sc.category === s.category || sc.category === "All Colleges / Open" || s.category === "All Colleges / Open") &&
+                                  ((s.detail && sc.detail === s.detail) ||
+                                    (sc.detail && sc.detail.includes(s.round)) ||
+                                    (!s.detail && !sc.detail))
+                              );
+
+                              if (linkedScore) {
+                                return (
+                                  <div style={{ marginTop: 4 }}>
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        padding: "2px 6px",
+                                        borderRadius: 4,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 3,
+                                        background: linkedScore.status === "Approved" ? "#dcfce7" : linkedScore.status === "Pending" ? "#fef3c7" : "#fee2e2",
+                                        color: linkedScore.status === "Approved" ? "#15803d" : linkedScore.status === "Pending" ? "#92400e" : "#b91c1c",
+                                        border: `1px solid ${linkedScore.status === "Approved" ? "#86efac" : linkedScore.status === "Pending" ? "#fde047" : "#fca5a5"}`,
+                                      }}
+                                    >
+                                      {linkedScore.status === "Approved" ? "✅ In Official Tally" : linkedScore.status === "Pending" ? "⏳ Tally Pending Review" : "❌ Rejected in Tally"}
+                                    </span>
+                                  </div>
+                                );
+                              }
+
+                              if (s.winner && s.winner !== "Draw" && onForwardToTally) {
+                                return (
+                                  <div style={{ marginTop: 4 }}>
+                                    <button
+                                      type="button"
+                                      className="button"
+                                      style={{
+                                        background: "#4f46e5",
+                                        color: "#fff",
+                                        padding: "3px 8px",
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        borderRadius: 6,
+                                        border: "none",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                      }}
+                                      onClick={() => onForwardToTally(s)}
+                                      title="Forward this match result into Submissions to tally official points"
+                                    >
+                                      ⚡ Forward to Tally
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         ) : (
                           <span style={{ color: "var(--muted)", fontSize: 12 }}>Pending match</span>

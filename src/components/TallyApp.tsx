@@ -60,18 +60,29 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
   const [publicTab, setPublicTab] = useState<"standings" | "schedules">("standings");
   const [recordingSchedule, setRecordingSchedule] = useState<GameSchedule | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<GameSchedule | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(() => new Date());
+  const [storageStatus, setStorageStatus] = useState<{ backend: "supabase" | "local"; connected: boolean } | null>(null);
+  const [submissionPrefill, setSubmissionPrefill] = useState<{
+    event: string;
+    category: string;
+    detail: string;
+    format?: string;
+    placings: Record<string, string>;
+  } | null>(null);
 
   const notify = (text: string, type: Notice["type"] = "success") => {
     setNotice({ text, type });
     window.setTimeout(() => setNotice(null), 3000);
   };
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     try {
+      if (!silent) setIsRefreshing(true);
       const [scoreData, ruleData, meData, schedData] = await Promise.all([
         api<{ scores: Score[]; updatedAt: string }>("/api/scores"),
         api<{ rules: ScoringRules; rulesConfirmed: boolean; rulesAuditTrail?: RuleAuditEntry[] }>("/api/rules"),
-        api<{ user: User | null }>("/api/auth/me"),
+        api<{ user: User | null; storage?: { backend: "supabase" | "local"; connected: boolean } }>("/api/auth/me"),
         api<{ schedules: GameSchedule[] }>("/api/schedules").catch(() => ({ schedules: [] })),
       ]);
       setScores(scoreData.scores);
@@ -80,15 +91,37 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
       setRulesConfirmed(ruleData.rulesConfirmed);
       if (ruleData.rulesAuditTrail) setRulesAuditTrail(ruleData.rulesAuditTrail);
       setUser(meData.user);
+      if (meData.storage) setStorageStatus(meData.storage);
       setSchedules(schedData.schedules || []);
+      setLastRefreshedAt(new Date());
     } catch (e) {
-      notify((e as Error).message, "error");
+      if (!silent) notify((e as Error).message, "error");
+    } finally {
+      if (!silent) setIsRefreshing(false);
     }
   }, []);
 
+  // Background auto-refresh: polls every 20s & refreshes on visibility change
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refresh(true);
+    const interval = setInterval(() => {
+      if (!editingScore && !recordingSchedule && !editingSchedule && !loginOpen) {
+        void refresh(true);
+      }
+    }, 20000);
+
+    const onVisChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
+  }, [refresh, editingScore, recordingSchedule, editingSchedule, loginOpen]);
 
   useEffect(() => {
     if (!publicView && user?.role === "superadmin") {
@@ -255,6 +288,58 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
     }
   }
 
+  function handleForwardToTally(schedule: GameSchedule) {
+    const placings: Record<string, string> = {};
+    const isAll = schedule.isAllColleges || schedule.teamA === "All Colleges" || isAllCollegesEvent(schedule.event, schedule.detail);
+
+    if (isAll) {
+      if (schedule.winner && schedule.winner !== "Draw") placings[schedule.winner] = "Champion";
+      if (schedule.runnerUp) placings[schedule.runnerUp] = "1st Runner-Up";
+      if (schedule.secondRunnerUp) placings[schedule.secondRunnerUp] = "2nd Runner-Up";
+    } else {
+      if (schedule.event.startsWith("E-games")) {
+        if (schedule.winner === schedule.teamA) {
+          placings[schedule.teamA] = "Win 2:0";
+          placings[schedule.teamB] = "Loss 0:2";
+        } else if (schedule.winner === schedule.teamB) {
+          placings[schedule.teamB] = "Win 2:0";
+          placings[schedule.teamA] = "Loss 0:2";
+        }
+      } else {
+        if (schedule.winner === schedule.teamA) {
+          placings[schedule.teamA] = "Champion";
+          placings[schedule.teamB] = "1st Runner-Up";
+        } else if (schedule.winner === schedule.teamB) {
+          placings[schedule.teamB] = "Champion";
+          placings[schedule.teamA] = "1st Runner-Up";
+        }
+      }
+    }
+
+    const detailText = schedule.detail || (isAll ? schedule.round : `${schedule.round} (${schedule.teamA} vs ${schedule.teamB})`);
+
+    setSubmissionPrefill({
+      event: schedule.event,
+      category: schedule.category,
+      detail: detailText,
+      format: schedule.event === "Athletics" ? (schedule.detail?.includes("Relay") ? "Relay" : "Individual") : undefined,
+      placings,
+    });
+    setTab("submissions");
+    notify(`Match loaded into score entry: ${schedule.event} (${schedule.category}). Review and submit for approval!`);
+  }
+
+  async function withdrawScore(id: string) {
+    if (!confirm("Are you sure you want to withdraw this pending score submission?")) return;
+    try {
+      await api(`/api/scores/${id}`, { method: "DELETE" });
+      await refresh();
+      notify("Pending submission withdrawn.");
+    } catch (e) {
+      notify((e as Error).message, "error");
+    }
+  }
+
   async function saveRules(next: ScoringRules) {
     try {
       await api("/api/rules", { method: "PUT", body: JSON.stringify({ rules: next }) });
@@ -362,6 +447,30 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         <span className="brandname">SIKLAB <em>2026</em><small>CSPC INTRAMURALS · OFFICIAL TALLY</small></span>
       </a>
       <nav>
+        {storageStatus && (
+          <span
+            className={`storage-badge ${storageStatus.backend === "supabase" ? "supabase" : "local"}`}
+            title={
+              storageStatus.backend === "supabase"
+                ? "Live data is securely backed by Supabase PostgreSQL."
+                : "Using local JSON storage. If deployed on Vercel, set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to persist across cold starts."
+            }
+          >
+            {storageStatus.backend === "supabase" ? "🟢 Supabase" : "⚠️ Local"}
+          </span>
+        )}
+
+        <button
+          type="button"
+          className="outline"
+          onClick={() => void refresh(false)}
+          title={`Auto-refreshes every 20s. Last updated: ${lastRefreshedAt.toLocaleTimeString()}`}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 10px", fontSize: 12 }}
+        >
+          <span className={isRefreshing ? "spin" : ""}>🔄</span>
+          <span className="refresh-txt">Refresh</span>
+        </button>
+
         {publicView ? (
           <>
             {user ? (
@@ -504,6 +613,15 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
               <p className="footnote">Gold, silver, and bronze are based on combined approved points for each sport and category.</p>
             </div>
             <div className="filters">
+              <button
+                type="button"
+                className="outline"
+                onClick={() => window.print()}
+                style={{ padding: "7px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}
+                title="Print official tally and medal standings / Save as PDF"
+              >
+                🖨️ Print
+              </button>
               <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)}>
                 <option value="all">All colleges</option>
                 {colleges.map((c) => <option key={c.id} value={c.id}>{c.id} · {c.name}</option>)}
@@ -630,9 +748,28 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
 
         {tab === "submissions" && (
           isOfficer ? (
-            <ScoreEntry rules={rules} onSubmit={submitScore} scores={scores.filter((s) => s.by === user.name)}/>
+            <ScoreEntry
+              rules={rules}
+              onSubmit={submitScore}
+              scores={scores.filter((s) => s.by === user.name)}
+              onWithdraw={withdrawScore}
+              prefill={submissionPrefill}
+              onClearPrefill={() => setSubmissionPrefill(null)}
+            />
           ) : (
-            <section className="panel tablepanel">
+            <>
+              {submissionPrefill && (
+                <div style={{ marginBottom: 20 }}>
+                  <ScoreEntry
+                    rules={rules}
+                    onSubmit={submitScore}
+                    scores={scores}
+                    prefill={submissionPrefill}
+                    onClearPrefill={() => setSubmissionPrefill(null)}
+                  />
+                </div>
+              )}
+              <section className="panel tablepanel">
               <div className="tablewrap">
                 <table>
                   <thead>
@@ -733,8 +870,8 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
                 </table>
               </div>
             </section>
-          )
-        )}
+          </>
+        ))}
 
         {!isOfficer && tab === "rules" && (
           <RulesEditor rules={rules} onSave={saveRules} auditTrail={rulesAuditTrail} />
@@ -742,10 +879,12 @@ export function TallyApp({ publicView = false }: { publicView?: boolean }) {
         {tab === "schedules" && (
           <ScheduleManager
             schedules={schedules}
+            scores={scores}
             onCreate={createSchedule}
             onOpenRecord={(s) => setRecordingSchedule(s)}
             onOpenEdit={(s) => setEditingSchedule(s)}
             onDelete={deleteSchedule}
+            onForwardToTally={handleForwardToTally}
           />
         )}
         {isSuper && tab === "accounts" && <Accounts accounts={accounts} onCreate={createAccount} onRemove={removeAccount} onBackup={downloadBackup} onRestore={restoreBackup}/>}
@@ -992,18 +1131,39 @@ function SubPointCalculator({
     return list.sort((a, b) => b.points - a.points);
   }, [subPoints]);
 
+  const ties = useMemo(() => {
+    const counts: Record<number, string[]> = {};
+    Object.entries(subPoints).forEach(([colId, pts]) => {
+      if (pts > 0) {
+        if (!counts[pts]) counts[pts] = [];
+        counts[pts].push(colId);
+      }
+    });
+    return Object.entries(counts)
+      .filter(([, cols]) => cols.length > 1)
+      .map(([pts, cols]) => ({ points: Number(pts), colleges: cols }));
+  }, [subPoints]);
+
   const hasAnyPoints = Object.values(subPoints).some((p) => p > 0);
 
   const handleApply = () => {
     // 1st: Champion (25 pts), 2nd: 1st Runner-Up (20 pts), 3rd: 2nd Runner-Up (15 pts), Others: Participation (5 pts)
     const placings: Record<string, string> = {};
+    let currentRank = 1;
+    let prevPoints: number | null = null;
+
     ranked.forEach((item, index) => {
       if (item.points === 0 && !hasAnyPoints) return;
-      if (index === 0) {
+      if (prevPoints !== null && item.points < prevPoints) {
+        currentRank = index + 1;
+      }
+      prevPoints = item.points;
+
+      if (currentRank === 1) {
         placings[item.college.id] = "Champion";
-      } else if (index === 1) {
+      } else if (currentRank === 2) {
         placings[item.college.id] = "1st Runner-Up";
-      } else if (index === 2) {
+      } else if (currentRank === 3) {
         placings[item.college.id] = "2nd Runner-Up";
       } else {
         placings[item.college.id] = "Participation";
@@ -1139,6 +1299,12 @@ function SubPointCalculator({
           })}
         </div>
 
+        {ties.length > 0 && (
+          <div style={{ marginTop: 10, padding: "8px 12px", background: "#fef3c7", border: "1px solid #fde047", borderRadius: 8, fontSize: 12, color: "#92400e" }}>
+            ⚠️ <b>Tie Detected:</b> {ties.map((t) => `${t.colleges.join(" & ")} (${t.points} sub-pts)`).join(", ")}. Tied colleges are awarded equal rank per tournament rules.
+          </div>
+        )}
+
         <button
           type="button"
           className="button primary"
@@ -1160,10 +1326,22 @@ function ScoreEntry({
   rules,
   onSubmit,
   scores,
+  onWithdraw,
+  prefill,
+  onClearPrefill,
 }: {
   rules: ScoringRules;
   onSubmit: (event: string, category: string, detail: string, format: string, placings: Record<string, string>, subPoints?: Record<string, number>) => void;
   scores: Score[];
+  onWithdraw?: (id: string) => void;
+  prefill?: {
+    event: string;
+    category: string;
+    detail: string;
+    format?: string;
+    placings: Record<string, string>;
+  } | null;
+  onClearPrefill?: () => void;
 }) {
   const [event, setEvent] = useState<string>(events[0]);
   const [category, setCategory] = useState<string>(() => getCategoriesForEvent(events[0])[0] || "Men");
@@ -1173,6 +1351,26 @@ function ScoreEntry({
   const [placings, setPlacings] = useState<Record<string, string>>({});
   const [useSubPoints, setUseSubPoints] = useState(false);
   const [subPointsData, setSubPointsData] = useState<Record<string, number> | undefined>(undefined);
+
+  useEffect(() => {
+    if (prefill) {
+      setEvent(prefill.event);
+      setCategory(prefill.category);
+      if (prefill.format) setFormat(prefill.format);
+      setDetail(prefill.detail);
+      setIsCustomDetail(true);
+      setPlacings(prefill.placings);
+      setUseSubPoints(false);
+      setSubPointsData(undefined);
+    }
+  }, [prefill]);
+
+  const handleSubmit = () => {
+    onSubmit(event, category, detail.trim(), format, placings, subPointsData);
+    setPlacings({});
+    setSubPointsData(undefined);
+    onClearPrefill?.();
+  };
 
   const isSubPoint = isSubPointSport(event);
   const allowedCategories = getCategoriesForEvent(event);
@@ -1232,6 +1430,24 @@ function ScoreEntry({
     <section className="panel entry">
       <h2>Submit event scores</h2>
       <p>The administrator must approve the result before it affects the public tally. Submit each discipline, division, or match separately.</p>
+
+      {prefill && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#e0e7ff", border: "1px solid #c7d2fe", borderRadius: 8, margin: "10px 0 16px" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#3730a3" }}>
+            ⚡ Pre-filled from match schedule: <b>{prefill.event}</b> · {prefill.category} ({prefill.detail})
+          </span>
+          <button type="button" className="outline" style={{ padding: "3px 8px", fontSize: 11 }} onClick={onClearPrefill}>
+            Clear prefill
+          </button>
+        </div>
+      )}
+
+      {isSubPoint && !useSubPoints && (
+        <div style={{ padding: "10px 14px", background: "#fef3c7", border: "1px solid #fde047", borderRadius: 8, fontSize: 12, color: "#92400e", margin: "10px 0 16px", lineHeight: 1.4 }}>
+          ⚠️ <b>Important Pointing Rule:</b> For <b>{event}</b> ({category}), official CSPC rules award <b>General Points (25 / 20 / 15 / 5)</b> to the overall division winner determined by sub-points. Use the <b>⚡ Sub-Point Calculator</b> below if calculating total division standings, rather than awarding 25 pts per individual heat/match.
+        </div>
+      )}
+
       <div className="formgrid">
         <label>
           Sport / event
@@ -1461,7 +1677,7 @@ function ScoreEntry({
         <button
           className="button primary"
           disabled={eventNeedsDetail(event) && !detail.trim()}
-          onClick={() => onSubmit(event, category, detail.trim(), format, placings, subPointsData)}
+          onClick={handleSubmit}
         >
           Submit for approval →
         </button>
@@ -1493,6 +1709,17 @@ function ScoreEntry({
                 {score.status === "Approved" && "Counted in Live Tally"}
                 {score.status === "Rejected" && "Excluded from Tally"}
               </span>
+              {score.status === "Pending" && onWithdraw && (
+                <button
+                  type="button"
+                  className="outline"
+                  style={{ color: "#ef4444", borderColor: "#fca5a5", fontSize: 11, padding: "2px 8px", marginTop: 4 }}
+                  onClick={() => onWithdraw(score.id)}
+                  title="Withdraw this pending submission"
+                >
+                  🗑️ Withdraw
+                </button>
+              )}
             </div>
           </div>
         ))

@@ -85,7 +85,8 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Officer or admin access required." }, { status: 403 });
 
   const body = await request.json().catch(() => null);
-  const isAllColleges = isAllCollegesEvent(String(body?.event || "").trim());
+  const detailStr = body?.detail ? String(body.detail).trim() : undefined;
+  const isAllColleges = isAllCollegesEvent(String(body?.event || "").trim(), detailStr);
   const teamA = isAllColleges ? "All Colleges" : String(body?.teamA || "").trim();
   const teamB = isAllColleges ? "All Colleges" : String(body?.teamB || "").trim();
   const category = String(body?.category || (isAllColleges ? "All Colleges / Open" : "")).trim();
@@ -198,12 +199,14 @@ export async function PATCH(request: Request) {
     const item = database.schedules.find((s) => s.id === body.id);
     if (!item) return;
 
+    if (body.detail !== undefined) item.detail = body.detail ? String(body.detail).trim() : undefined;
     if (body.event !== undefined) {
       item.event = String(body.event).trim();
-      item.isAllColleges = isAllCollegesEvent(item.event);
+      item.isAllColleges = isAllCollegesEvent(item.event, item.detail);
+    } else if (body.detail !== undefined) {
+      item.isAllColleges = isAllCollegesEvent(item.event, item.detail);
     }
     if (body.category !== undefined) item.category = String(body.category).trim();
-    if (body.detail !== undefined) item.detail = body.detail ? String(body.detail).trim() : undefined;
     if (body.round !== undefined) item.round = String(body.round).trim();
     if (body.teamA !== undefined) item.teamA = String(body.teamA).trim();
     if (body.teamB !== undefined) item.teamB = String(body.teamB).trim();
@@ -234,12 +237,26 @@ export async function DELETE(request: Request) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Schedule ID is required." }, { status: 400 });
 
+  const db = await readDb();
+  const target = db.schedules?.find((s) => s.id === id);
+  if (!target) return NextResponse.json({ error: "Schedule not found." }, { status: 404 });
+
+  // Officers can only delete games they scheduled themselves, and cannot delete games already completed
+  if (user.role === "officer") {
+    if (target.createdBy !== user.name) {
+      return NextResponse.json({ error: "Officers can only delete game schedules they created." }, { status: 403 });
+    }
+    if (target.status === "Completed") {
+      return NextResponse.json({ error: "Completed matches cannot be deleted by officers. Contact an administrator." }, { status: 403 });
+    }
+  }
+
   let removed = false;
-  await updateDb((db) => {
-    if (!Array.isArray(db.schedules)) return;
-    const index = db.schedules.findIndex((s) => s.id === id);
+  await updateDb((database) => {
+    if (!Array.isArray(database.schedules)) return;
+    const index = database.schedules.findIndex((s) => s.id === id);
     if (index !== -1) {
-      db.schedules.splice(index, 1);
+      database.schedules.splice(index, 1);
       removed = true;
     }
   });
