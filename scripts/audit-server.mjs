@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 // Each run owns its server, credentials and data. Never targets the user's instance.
 export async function auditServer(label) {
+  if (!existsSync('src/lib/db.ts')) throw new Error('This is the archived JSON-store audit. Use npm test and the Phase 4 rehearsal scripts; check out c326600 separately to reproduce the baseline.');
   const directory = path.resolve('output/audit', `${label}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const reservation = createServer();

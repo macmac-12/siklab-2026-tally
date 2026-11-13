@@ -1,38 +1,511 @@
-'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import type { StaffSnapshot, User } from '@/lib/model';
-import { categoryLabel } from '@/lib/catalog';
-import Brand from '../shared/Brand';
-import { dateLabel, timeLabel } from '../shared/format';
-import { api } from './client';
-import ScheduleEditor from './ScheduleEditor';
-import ResultEditor, { AwardEditor } from './ResultEditor';
-import ReviewQueue from './ReviewQueue';
-import { AccountEditor, BackupPanel, EntryEditor, RuleEditor } from './AdminPanels';
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import type { StaffSnapshot, User } from "@/lib/model";
+import { categoryLabel } from "@/lib/catalog";
+import Brand from "../shared/Brand";
+import { dateLabel, timeLabel } from "../shared/format";
+import { api } from "./client";
+import ScheduleEditor from "./ScheduleEditor";
+import ResultEditor, { AwardEditor } from "./ResultEditor";
+import ReviewQueue from "./ReviewQueue";
+import {
+  AccountEditor,
+  BackupPanel,
+  EntryEditor,
+  RuleEditor,
+} from "./AdminPanels";
 export default function StaffApp() {
- const [state,setState]=useState<StaffSnapshot|null>(null),[resetUser,setResetUser]=useState<User|null>(null),[error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[tab,setTab]=useState('events'),[category,setCategory]=useState(''),[editor,setEditor]=useState<{type:'schedule'|'result';id?:string}|null>(null);
- const keys=useRef(new Map<string,string>());
- const load=useCallback(async()=>{const s=await api<StaffSnapshot&{resetRequired?:boolean}>('/api/staff/state');if(s.resetRequired)setResetUser(s.user);else{setState(s);setCategory(c=>c||s.categories[0]?.id||'');}},[]);
- useEffect(()=>{void load().catch(e=>setError(e.message));},[load]);
- async function run(body:unknown) {
-  const text=JSON.stringify(body);let key=keys.current.get(text);if(!key){key=crypto.randomUUID();keys.current.set(text,key);}
-  setBusy(true);setError('');setMessage('');
-  try{await api('/api/staff/command',body,key);keys.current.delete(text);await load();setMessage('Saved successfully.');return true;}catch(e){setError((e as Error).message);return false;}finally{setBusy(false);}
- }
- if(resetUser)return <main className="shell narrow"><Brand staff/><section className="panel editor"><h1>Set your own password</h1><p>Your administrator provided a temporary password. Change it before managing events.</p><form onSubmit={async e=>{e.preventDefault();setBusy(true);const f=new FormData(e.currentTarget);try{await api('/api/auth/password',{currentPassword:f.get('currentPassword'),newPassword:f.get('newPassword')});location.assign('/staff/login');}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}><label>Temporary password<input name="currentPassword" type="password" autoComplete="current-password" required/></label><label>New password<input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={72} required/></label>{error?<p role="alert" className="alert">{error}</p>:null}<button disabled={busy} className="primary">Change password and sign in again</button></form></section></main>;
- const admin=state?.user.role!=='officer';const schedules=state?.schedules.filter(s=>!category||s.categoryId===category)||[];
- const tabs=[['events','My events'],['schedules','Schedules'],['awards','Championships'],...(admin?[['review','Review queue'],['accounts','Accounts'],['rules','Official rules'],['history','History']]:[]),...(state?.user.role==='superadmin'?[['backup','Backup & recovery']]:[]),['password','My password']];
- return <><a className="skip-link" href="#workspace">Skip to workspace</a><header className="site-header"><div className="shell header-inner"><Brand staff/><div className="staff-identity"><span>{state?.user.name||'Loading…'}</span><Link href="/" target="_blank">Public site ↗</Link><button onClick={async()=>{try{await api('/api/auth/logout',{});location.assign('/staff/login');}catch(e){setError((e as Error).message);}}}>Sign out</button></div></div></header><main className="shell workspace" id="workspace"><aside className="staff-nav" aria-label="Workspace navigation">{tabs.map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} onClick={()=>{setTab(id);setEditor(null);setMessage('');setError('');}}>{label}{id==='review'&&state?<span className="nav-count">{state.revisions.filter(r=>r.status==='pending').length}</span>:null}</button>)}</aside><div className="workspace-content"><div className="section-head"><div><span className="eyebrow accent">EVENT WORKSPACE</span><h1>{tabs.find(([id])=>id===tab)?.[1]}</h1></div><button disabled={busy} onClick={()=>{void load().then(()=>setMessage('Latest records loaded.')).catch(e=>setError(e.message));}}>Refresh</button></div>
- {error?<div className="alert" role="alert">{error}</div>:null}{message?<div className="success" role="status">{message}</div>:null}{!state?<p role="status">Loading your workspace…</p>:<>
- {['schedules','awards','rules'].includes(tab)?<label className="event-picker">Event category<select value={category} onChange={e=>{setCategory(e.target.value);setEditor(null);}}>{state.categories.map(c=><option key={c.id} value={c.id}>{categoryLabel(c)}</option>)}</select></label>:null}
- {tab==='events'?<><p className="muted">Choose an event to manage its schedule and submit results. Championship awards are finalized separately.</p><div className="event-grid">{state.categories.map(c=>{const list=state.schedules.filter(s=>s.categoryId===c.id);return <button className="event-card" key={c.id} onClick={()=>{setCategory(c.id);setTab('schedules');}}><span className="eyebrow">{c.group}</span><h3>{c.event}</h3><p>{c.name}</p><span className="muted">{list.length} competitions · {list.filter(s=>s.publishedId).length} approved</span>{!c.confirmed?<span className="hold-label">Point rule awaiting confirmation</span>:null}<span className="event-arrow" aria-hidden="true">↗</span></button>;})}</div>{!state.categories.length?<p className="panel empty">No events are assigned yet. Contact an administrator.</p>:null}</>:null}
- {tab==='schedules'?<div className="stack"><div className="actions"><button className="primary" disabled={!category} onClick={()=>setEditor({type:'schedule'})}>+ Schedule competition</button><button onClick={()=>setTab('awards')}>Finalize championship →</button></div><EntryEditor key={category} state={state} categoryId={category} run={run} busy={busy}/>
- {editor?.type==='schedule'?<ScheduleEditor key={editor.id||`new-${category}`} state={state} existing={state.schedules.find(s=>s.id===editor.id)} categoryId={category} run={run} close={()=>setEditor(null)} busy={busy}/>:null}{editor?.type==='result'&&state.schedules.find(s=>s.id===editor.id)?<ResultEditor key={editor.id} state={state} schedule={state.schedules.find(s=>s.id===editor.id)!} run={run} close={()=>setEditor(null)} busy={busy}/>:null}
- {schedules.map(s=>{const latest=state.revisions.find(r=>r.scheduleId===s.id);return <article className="panel compact" key={s.id}><div className="section-head"><div><h3>{s.title}</h3><p className="muted small">{s.stage} · {dateLabel(s.date)} · {timeLabel(s.startsAt)} · {s.venue}</p></div><span className={`status ${s.status}`}>{s.status}</span></div><p>{s.entryIds.map(id=>state.entries.find(e=>e.id===id)?.label).join(' · ')}</p>{latest?<p className="small">Result: <strong>{latest.status}</strong>{latest.reviewNote?` · ${latest.reviewNote}`:''}</p>:null}<div className="actions"><button onClick={()=>setEditor({type:'schedule',id:s.id})}>Edit schedule</button><button disabled={['cancelled','postponed'].includes(s.status)||latest?.status==='pending'} onClick={()=>setEditor({type:'result',id:s.id})}>{s.publishedId?'Correct result':latest?.status==='draft'?'Continue draft':'Enter result'}</button></div></article>;})}{!schedules.length&&!editor?<div className="panel empty"><h3>No competitions scheduled yet.</h3><p>Create the first schedule for this event.</p></div>:null}</div>:null}
- {tab==='awards'?<AwardEditor key={category} state={state} categoryId={category} run={run} busy={busy}/>:null}
- {tab==='review'&&admin?<ReviewQueue state={state} run={run} busy={busy}/>:null}{tab==='accounts'&&admin?<AccountEditor state={state} run={run} busy={busy}/>:null}{tab==='rules'&&admin?<RuleEditor state={state} categoryId={category} run={run} busy={busy}/>:null}{tab==='backup'&&state.user.role==='superadmin'?<BackupPanel/>:null}
- {tab==='history'&&admin?<section className="panel editor"><h2>Recent audit history</h2><p className="muted">Latest 200 actions. Full history is preserved in backups.</p>{state.audit.map(a=><details className="audit-entry" key={a.id}><summary>{a.action} · {state.users.find(u=>u.id===a.actorId)?.name||a.actorId}<small>{new Date(a.createdAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})}</small></summary><p>{a.reason}</p><h4>Before</h4><pre>{JSON.stringify(a.before,null,2)}</pre><h4>After</h4><pre>{JSON.stringify(a.after,null,2)}</pre></details>)}</section>:null}
- {tab==='password'?<section className="panel editor"><h2>Change your password</h2><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);setBusy(true);try{await api('/api/auth/password',{currentPassword:f.get('currentPassword'),newPassword:f.get('newPassword')});location.assign('/staff/login');}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}><label>Current password<input type="password" name="currentPassword" autoComplete="current-password" required/></label><label>New password<input type="password" name="newPassword" autoComplete="new-password" minLength={12} maxLength={72} required/></label><button className="primary" disabled={busy}>Change password and sign out</button></form></section>:null}
- </>}</div></main></>;
+  const [state, setState] = useState<StaffSnapshot | null>(null),
+    [resetUser, setResetUser] = useState<User | null>(null),
+    [error, setError] = useState(""),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false),
+    [tab, setTab] = useState("events"),
+    [category, setCategory] = useState(""),
+    [editor, setEditor] = useState<{
+      type: "schedule" | "result";
+      id?: string;
+    } | null>(null);
+  const keys = useRef(new Map<string, string>());
+  const load = useCallback(async () => {
+    const s = await api<StaffSnapshot & { resetRequired?: boolean }>(
+      "/api/staff/state",
+    );
+    if (s.resetRequired) setResetUser(s.user);
+    else {
+      setState(s);
+      setCategory((c) => c || s.categories[0]?.id || "");
+    }
+  }, []);
+  useEffect(() => {
+    void load().catch((e) => setError(e.message));
+  }, [load]);
+  async function run(body: unknown) {
+    const text = JSON.stringify(body);
+    let key = keys.current.get(text);
+    if (!key) {
+      key = crypto.randomUUID();
+      keys.current.set(text, key);
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api("/api/staff/command", body, key);
+      keys.current.delete(text);
+      await load();
+      setMessage("Saved successfully.");
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (resetUser)
+    return (
+      <main className="shell narrow">
+        <Brand staff />
+        <section className="panel editor">
+          <h1>Set your own password</h1>
+          <p>
+            Your administrator provided a temporary password. Change it before
+            managing events.
+          </p>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              const f = new FormData(e.currentTarget);
+              try {
+                await api("/api/auth/password", {
+                  currentPassword: f.get("currentPassword"),
+                  newPassword: f.get("newPassword"),
+                });
+                location.assign("/staff/login");
+              } catch (err) {
+                setError((err as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label>
+              Temporary password
+              <input
+                name="currentPassword"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label>
+              New password
+              <input
+                name="newPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                maxLength={72}
+                required
+              />
+            </label>
+            {error ? (
+              <p role="alert" className="alert">
+                {error}
+              </p>
+            ) : null}
+            <button disabled={busy} className="primary">
+              Change password and sign in again
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  const admin = !!state && state.user.role !== "officer";
+  const schedules =
+    state?.schedules.filter((s) => !category || s.categoryId === category) ||
+    [];
+  const tabs = [
+    ["events", "My events"],
+    ["schedules", "Schedules"],
+    ["awards", "Championships"],
+    ...(admin
+      ? [
+          ["review", "Review queue"],
+          ["accounts", "Accounts"],
+          ["rules", "Official rules"],
+          ["history", "History"],
+        ]
+      : []),
+    ...(state?.user.role === "superadmin"
+      ? [["backup", "Backup & recovery"]]
+      : []),
+    ["password", "My password"],
+  ];
+  return (
+    <>
+      <a className="skip-link" href="#workspace">
+        Skip to workspace
+      </a>
+      <header className="site-header">
+        <div className="shell header-inner">
+          <Brand staff />
+          <div className="staff-identity">
+            <span>{state?.user.name || "Loading…"}</span>
+            <Link href="/" target="_blank">
+              Public site ↗
+            </Link>
+            <button
+              onClick={async () => {
+                try {
+                  await api("/api/auth/logout", {});
+                  location.assign("/staff/login");
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </header>
+      <main className="shell workspace" id="workspace">
+        <aside className="staff-nav" aria-label="Workspace navigation">
+          {tabs.map(([id, label]) => (
+            <button
+              key={id}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => {
+                setTab(id);
+                setEditor(null);
+                setMessage("");
+                setError("");
+              }}
+            >
+              {label}
+              {id === "review" && state ? (
+                <span className="nav-count">
+                  {state.revisions.filter((r) => r.status === "pending").length}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </aside>
+        <div className="workspace-content">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow accent">EVENT WORKSPACE</span>
+              <h1>{tabs.find(([id]) => id === tab)?.[1]}</h1>
+            </div>
+            <button
+              disabled={busy}
+              onClick={() => {
+                void load()
+                  .then(() => setMessage("Latest records loaded."))
+                  .catch((e) => setError(e.message));
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          {error ? (
+            <div className="alert" role="alert">
+              {error}
+            </div>
+          ) : null}
+          {message ? (
+            <div className="success" role="status">
+              {message}
+            </div>
+          ) : null}
+          {!state ? (
+            <p role="status">Loading your workspace…</p>
+          ) : (
+            <>
+              {["schedules", "awards", "rules"].includes(tab) ? (
+                <label className="event-picker">
+                  Event category
+                  <select
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value);
+                      setEditor(null);
+                    }}
+                  >
+                    {state.categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {categoryLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {tab === "events" ? (
+                <>
+                  <p className="muted">
+                    Choose an event to manage its schedule and submit results.
+                    Championship awards are finalized separately.
+                  </p>
+                  <div className="event-grid">
+                    {state.categories.map((c) => {
+                      const list = state.schedules.filter(
+                        (s) => s.categoryId === c.id,
+                      );
+                      return (
+                        <button
+                          className="event-card"
+                          key={c.id}
+                          onClick={() => {
+                            setCategory(c.id);
+                            setTab("schedules");
+                          }}
+                        >
+                          <span className="eyebrow">{c.group}</span>
+                          <h3>{c.event}</h3>
+                          <p>{c.name}</p>
+                          <span className="muted">
+                            {list.length} competitions ·{" "}
+                            {list.filter((s) => s.publishedId).length} approved
+                          </span>
+                          {!c.confirmed ? (
+                            <span className="hold-label">
+                              Point rule awaiting confirmation
+                            </span>
+                          ) : null}
+                          <span className="event-arrow" aria-hidden="true">
+                            ↗
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!state.categories.length ? (
+                    <p className="panel empty">
+                      No events are assigned yet. Contact an administrator.
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+              {tab === "schedules" ? (
+                <div className="stack">
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={!category}
+                      onClick={() => setEditor({ type: "schedule" })}
+                    >
+                      + Schedule competition
+                    </button>
+                    <button onClick={() => setTab("awards")}>
+                      Finalize championship →
+                    </button>
+                  </div>
+                  <EntryEditor
+                    key={category}
+                    state={state}
+                    categoryId={category}
+                    run={run}
+                    busy={busy}
+                  />
+                  {editor?.type === "schedule" ? (
+                    <ScheduleEditor
+                      key={editor.id || `new-${category}`}
+                      state={state}
+                      existing={state.schedules.find((s) => s.id === editor.id)}
+                      categoryId={category}
+                      run={run}
+                      close={() => setEditor(null)}
+                      busy={busy}
+                    />
+                  ) : null}
+                  {editor?.type === "result" &&
+                  state.schedules.find((s) => s.id === editor.id) ? (
+                    <ResultEditor
+                      key={editor.id}
+                      state={state}
+                      schedule={state.schedules.find(
+                        (s) => s.id === editor.id,
+                      )!}
+                      run={run}
+                      close={() => setEditor(null)}
+                      busy={busy}
+                    />
+                  ) : null}
+                  {schedules.map((s) => {
+                    const latest = state.revisions.find(
+                      (r) => r.scheduleId === s.id,
+                    );
+                    return (
+                      <article className="panel compact" key={s.id}>
+                        <div className="section-head">
+                          <div>
+                            <h3>{s.title}</h3>
+                            <p className="muted small">
+                              {s.stage} · {dateLabel(s.date)} ·{" "}
+                              {timeLabel(s.startsAt)} · {s.venue}
+                            </p>
+                          </div>
+                          <span className={`status ${s.status}`}>
+                            {s.status}
+                          </span>
+                        </div>
+                        <p>
+                          {s.entryIds
+                            .map(
+                              (id) =>
+                                state.entries.find((e) => e.id === id)?.label,
+                            )
+                            .join(" · ")}
+                        </p>
+                        {latest ? (
+                          <p className="small">
+                            Result: <strong>{latest.status}</strong>
+                            {latest.reviewNote ? ` · ${latest.reviewNote}` : ""}
+                          </p>
+                        ) : null}
+                        <div className="actions">
+                          <button
+                            onClick={() =>
+                              setEditor({ type: "schedule", id: s.id })
+                            }
+                          >
+                            Edit schedule
+                          </button>
+                          <button
+                            disabled={
+                              ["cancelled", "postponed"].includes(s.status) ||
+                              latest?.status === "pending"
+                            }
+                            onClick={() =>
+                              setEditor({ type: "result", id: s.id })
+                            }
+                          >
+                            {s.publishedId
+                              ? "Correct result"
+                              : latest?.status === "draft"
+                                ? "Continue draft"
+                                : "Enter result"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {!schedules.length && !editor ? (
+                    <div className="panel empty">
+                      <h3>No competitions scheduled yet.</h3>
+                      <p>Create the first schedule for this event.</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {tab === "awards" ? (
+                <AwardEditor
+                  key={category}
+                  state={state}
+                  categoryId={category}
+                  run={run}
+                  busy={busy}
+                />
+              ) : null}
+              {tab === "review" && admin ? (
+                <ReviewQueue state={state} run={run} busy={busy} />
+              ) : null}
+              {tab === "accounts" && admin ? (
+                <AccountEditor state={state} run={run} busy={busy} />
+              ) : null}
+              {tab === "rules" && admin ? (
+                <RuleEditor
+                  state={state}
+                  categoryId={category}
+                  run={run}
+                  busy={busy}
+                />
+              ) : null}
+              {tab === "backup" && state.user.role === "superadmin" ? (
+                <BackupPanel />
+              ) : null}
+              {tab === "history" && admin ? (
+                <section className="panel editor">
+                  <h2>Recent audit history</h2>
+                  <p className="muted">
+                    Latest 200 actions. Full history is preserved in backups.
+                  </p>
+                  {state.audit.map((a) => (
+                    <details className="audit-entry" key={a.id}>
+                      <summary>
+                        {a.action} ·{" "}
+                        {state.users.find((u) => u.id === a.actorId)?.name ||
+                          a.actorId}
+                        <small>
+                          {new Date(a.createdAt).toLocaleString("en-PH", {
+                            timeZone: "Asia/Manila",
+                          })}
+                        </small>
+                      </summary>
+                      <p>{a.reason}</p>
+                      <h4>Before</h4>
+                      <pre>{JSON.stringify(a.before, null, 2)}</pre>
+                      <h4>After</h4>
+                      <pre>{JSON.stringify(a.after, null, 2)}</pre>
+                    </details>
+                  ))}
+                </section>
+              ) : null}
+              {tab === "password" ? (
+                <section className="panel editor">
+                  <h2>Change your password</h2>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const f = new FormData(e.currentTarget);
+                      setBusy(true);
+                      try {
+                        await api("/api/auth/password", {
+                          currentPassword: f.get("currentPassword"),
+                          newPassword: f.get("newPassword"),
+                        });
+                        location.assign("/staff/login");
+                      } catch (err) {
+                        setError((err as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <label>
+                      Current password
+                      <input
+                        type="password"
+                        name="currentPassword"
+                        autoComplete="current-password"
+                        required
+                      />
+                    </label>
+                    <label>
+                      New password
+                      <input
+                        type="password"
+                        name="newPassword"
+                        autoComplete="new-password"
+                        minLength={12}
+                        maxLength={72}
+                        required
+                      />
+                    </label>
+                    <button className="primary" disabled={busy}>
+                      Change password and sign out
+                    </button>
+                  </form>
+                </section>
+              ) : null}
+            </>
+          )}
+        </div>
+      </main>
+    </>
+  );
 }
