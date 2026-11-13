@@ -1,2 +1,3 @@
-import { TallyApp } from "@/components/TallyApp";
-export default function Page() { return <TallyApp />; }
+import { Suspense } from 'react';
+import PublicApp from '@/components/public/PublicApp';
+export default function Page(){return <Suspense fallback={<p>Loading Siklab 2026…</p>}><PublicApp/></Suspense>;}

@@ -1,5 +1,2 @@
-import { TallyApp } from "@/components/TallyApp";
-
-export default function ScoreboardPage() {
-  return <TallyApp publicView />;
-}
+import { redirect } from 'next/navigation';
+export default function Page(){redirect('/standings');}
