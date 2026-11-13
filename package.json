@@ -8,21 +8,30 @@
     "audit:load": "node scripts/load-audit.mjs",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:migrate": "node --env-file=.env.local --import tsx scripts/migrate.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:integration": "tsx --test tests/workflow.test.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0",
     "bcryptjs": "^2.4.3",
-    "jose": "^5.9.6",
     "next": "^15.2.0",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.13.4",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "postcss": "8.5.32"
   }
 }

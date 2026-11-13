@@ -16,6 +16,7 @@ export function validatePlacings(rows: Placing[], entries: string[]) {
 export function directAwards(category: Category, rows: Placing[], entries: Entry[]): AwardRow[] {
   if (!category.confirmed) throw new Error(category.hold || 'Official scoring configuration is not confirmed.');
   validatePlacings(rows, entries.map(e => e.id));
+  if(rows.filter(r=>r.rank!==null).length < Math.min(category.rule.podium.length,rows.filter(r=>r.eligible).length)) throw new Error('Complete all available podium placings before awarding official points.');
   const awards = rows.map(row => ({ collegeId: entries.find(e => e.id === row.entryId)!.collegeId, entryId: row.entryId, rank: row.rank, eligible: row.eligible, points: pointsFor(row.rank, row.eligible, category.rule) }));
   if (category.policy === 'college' && new Set(awards.map(r=>r.collegeId)).size !== awards.length) throw new Error('This category awards once per college.');
   if (category.policy === 'best_entry') return COLLEGES.flatMap(c => awards.filter(r=>r.collegeId===c.id).sort((a,b)=>b.points-a.points).slice(0,1));

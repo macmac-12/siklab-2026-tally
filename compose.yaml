@@ -1,0 +1,20 @@
+name: siklab-2026
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: siklab
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Run npm run setup:local}
+      POSTGRES_DB: siklab
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - siklab_pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U siklab -d siklab"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  siklab_pg:
