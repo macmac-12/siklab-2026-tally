@@ -1,0 +1,29 @@
+{
+  "inheritedCommit": "3bab3f9e0708d2cdd85f1bae3a17ec16f090b1de",
+  "build": {
+    "command": "DATA_ROOT=\"$PWD/output/audit/build-data\" NEXT_TELEMETRY_DISABLED=1 npm run build",
+    "exitCode": 0,
+    "includesTypeChecking": true,
+    "firstLoadJsKiB": 124,
+    "warnings": [
+      "CSS align-items:end compatibility warnings at globals.css lines 28 and 78; use flex-end in later polish phase."
+    ]
+  },
+  "typeCheck": {
+    "command": "npx tsc --noEmit",
+    "exitCode": 0
+  },
+  "setupPreservesExistingEnv": true,
+  "applicationSourceUnchanged": true,
+  "dependencyLockfileUnchanged": true,
+  "versions": {
+    "node": "v26.12.0",
+    "next": "15.5.29",
+    "react": "19.3.1",
+    "typescript": "5.9.3"
+  },
+  "rawLogs": [
+    "output/audit/build.log",
+    "output/audit/typecheck.log"
+  ]
+}

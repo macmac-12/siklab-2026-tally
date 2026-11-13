@@ -1,0 +1,35 @@
+{
+  "verifiedAt": "2026-11-13T15:41:19.362Z",
+  "base": "http://127.0.0.1:3000",
+  "responses": [
+    {
+      "route": "/",
+      "status": 200
+    },
+    {
+      "route": "/scoreboard",
+      "status": 200
+    },
+    {
+      "route": "/api/scores",
+      "status": 200
+    },
+    {
+      "route": "/api/schedules",
+      "status": 200
+    }
+  ],
+  "loginStatus": 200,
+  "userRole": "superadmin",
+  "storage": {
+    "backend": "local",
+    "connected": false
+  },
+  "records": {
+    "users": 1,
+    "scores": 0,
+    "schedules": 0,
+    "rulesConfirmed": false
+  },
+  "envPermissions": 384
+}

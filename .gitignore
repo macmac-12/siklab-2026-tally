@@ -11,3 +11,8 @@ next-env.d.ts
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local verification artifacts (may include backups and test sessions)
+output/
+.playwright-cli/
+*.tsbuildinfo

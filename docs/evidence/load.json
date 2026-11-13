@@ -1,0 +1,392 @@
+{
+  "completedAt": "2026-11-13T15:39:49.141Z",
+  "mode": "production build, local JSON, loopback, no browser/assets",
+  "fixture": {
+    "users": 21,
+    "schedules": 140,
+    "scores": 72
+  },
+  "methodology": "Each viewer sends the same four parallel GETs as the app once, staggered over a 20-second arrival window. Staff each send one schedule create. Fresh server per phase; 5-second request deadlines. This is a bounded overload screen, not a sustained capacity certification. Timed-out writes may still commit. RSS samples cover the server process only. Successful-request percentiles exclude timed-out requests; inspect timeout counts alongside them.",
+  "phases": [
+    {
+      "viewers": 1,
+      "activeStaff": 0,
+      "durationMs": 20000,
+      "elapsedMs": 20000,
+      "offeredRequestsPerSecond": 0.2,
+      "all": {
+        "requests": 4,
+        "successful": 4,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": 434,
+        "successP95Ms": 1315,
+        "attemptP95Ms": 1315
+      },
+      "viewer": {
+        "requests": 4,
+        "successful": 4,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": 434,
+        "successP95Ms": 1315,
+        "attemptP95Ms": 1315
+      },
+      "staff": {
+        "requests": 0,
+        "successful": 0,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": null,
+        "successP95Ms": null,
+        "attemptP95Ms": null
+      },
+      "byRoute": {
+        "/api/scores": {
+          "requests": 1,
+          "successful": 1,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 434,
+          "successP95Ms": 434,
+          "attemptP95Ms": 434
+        },
+        "/api/rules": {
+          "requests": 1,
+          "successful": 1,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 857,
+          "successP95Ms": 857,
+          "attemptP95Ms": 857
+        },
+        "/api/auth/me": {
+          "requests": 1,
+          "successful": 1,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 6,
+          "successP95Ms": 6,
+          "attemptP95Ms": 6
+        },
+        "/api/schedules": {
+          "requests": 1,
+          "successful": 1,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 1315,
+          "successP95Ms": 1315,
+          "attemptP95Ms": 1315
+        }
+      },
+      "maxRssMiB": 200,
+      "persistedStaffSchedules": 0,
+      "acknowledgedWritesPersisted": true,
+      "duplicateIds": false
+    },
+    {
+      "viewers": 10,
+      "activeStaff": 0,
+      "durationMs": 20000,
+      "elapsedMs": 19999,
+      "offeredRequestsPerSecond": 2,
+      "all": {
+        "requests": 40,
+        "successful": 40,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": 440,
+        "successP95Ms": 1311,
+        "attemptP95Ms": 1311
+      },
+      "viewer": {
+        "requests": 40,
+        "successful": 40,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": 440,
+        "successP95Ms": 1311,
+        "attemptP95Ms": 1311
+      },
+      "staff": {
+        "requests": 0,
+        "successful": 0,
+        "timeouts": 0,
+        "otherErrors": 0,
+        "successP50Ms": null,
+        "successP95Ms": null,
+        "attemptP95Ms": null
+      },
+      "byRoute": {
+        "/api/scores": {
+          "requests": 10,
+          "successful": 10,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 398,
+          "successP95Ms": 440,
+          "attemptP95Ms": 440
+        },
+        "/api/rules": {
+          "requests": 10,
+          "successful": 10,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 804,
+          "successP95Ms": 863,
+          "attemptP95Ms": 863
+        },
+        "/api/auth/me": {
+          "requests": 10,
+          "successful": 10,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 7,
+          "successP95Ms": 13,
+          "attemptP95Ms": 13
+        },
+        "/api/schedules": {
+          "requests": 10,
+          "successful": 10,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 1267,
+          "successP95Ms": 1333,
+          "attemptP95Ms": 1333
+        }
+      },
+      "maxRssMiB": 208,
+      "persistedStaffSchedules": 0,
+      "acknowledgedWritesPersisted": true,
+      "duplicateIds": false
+    },
+    {
+      "viewers": 50,
+      "activeStaff": 10,
+      "durationMs": 20000,
+      "elapsedMs": 24601,
+      "offeredRequestsPerSecond": 10.5,
+      "all": {
+        "requests": 210,
+        "successful": 63,
+        "timeouts": 147,
+        "otherErrors": 0,
+        "successP50Ms": 237,
+        "successP95Ms": 3966,
+        "attemptP95Ms": 5002
+      },
+      "viewer": {
+        "requests": 200,
+        "successful": 63,
+        "timeouts": 137,
+        "otherErrors": 0,
+        "successP50Ms": 237,
+        "successP95Ms": 3966,
+        "attemptP95Ms": 5002
+      },
+      "staff": {
+        "requests": 10,
+        "successful": 0,
+        "timeouts": 10,
+        "otherErrors": 0,
+        "successP50Ms": null,
+        "successP95Ms": null,
+        "attemptP95Ms": 5005
+      },
+      "byRoute": {
+        "/api/scores": {
+          "requests": 50,
+          "successful": 5,
+          "timeouts": 45,
+          "otherErrors": 0,
+          "successP50Ms": 2441,
+          "successP95Ms": 4859,
+          "attemptP95Ms": 5001
+        },
+        "/api/rules": {
+          "requests": 50,
+          "successful": 4,
+          "timeouts": 46,
+          "otherErrors": 0,
+          "successP50Ms": 1897,
+          "successP95Ms": 4392,
+          "attemptP95Ms": 5002
+        },
+        "/api/auth/me": {
+          "requests": 50,
+          "successful": 50,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 159,
+          "successP95Ms": 393,
+          "attemptP95Ms": 393
+        },
+        "/api/schedules": {
+          "requests": 50,
+          "successful": 4,
+          "timeouts": 46,
+          "otherErrors": 0,
+          "successP50Ms": 2372,
+          "successP95Ms": 4819,
+          "attemptP95Ms": 5002
+        }
+      },
+      "maxRssMiB": 240,
+      "persistedStaffSchedules": 1,
+      "acknowledgedWritesPersisted": true,
+      "duplicateIds": false
+    },
+    {
+      "viewers": 100,
+      "activeStaff": 20,
+      "durationMs": 20000,
+      "elapsedMs": 24805,
+      "offeredRequestsPerSecond": 21,
+      "all": {
+        "requests": 420,
+        "successful": 110,
+        "timeouts": 310,
+        "otherErrors": 0,
+        "successP50Ms": 195,
+        "successP95Ms": 2154,
+        "attemptP95Ms": 5003
+      },
+      "viewer": {
+        "requests": 400,
+        "successful": 110,
+        "timeouts": 290,
+        "otherErrors": 0,
+        "successP50Ms": 195,
+        "successP95Ms": 2154,
+        "attemptP95Ms": 5003
+      },
+      "staff": {
+        "requests": 20,
+        "successful": 0,
+        "timeouts": 20,
+        "otherErrors": 0,
+        "successP50Ms": null,
+        "successP95Ms": null,
+        "attemptP95Ms": 5002
+      },
+      "byRoute": {
+        "/api/scores": {
+          "requests": 100,
+          "successful": 4,
+          "timeouts": 96,
+          "otherErrors": 0,
+          "successP50Ms": 1716,
+          "successP95Ms": 4752,
+          "attemptP95Ms": 5003
+        },
+        "/api/rules": {
+          "requests": 100,
+          "successful": 3,
+          "timeouts": 97,
+          "otherErrors": 0,
+          "successP50Ms": 2154,
+          "successP95Ms": 3952,
+          "attemptP95Ms": 5003
+        },
+        "/api/auth/me": {
+          "requests": 100,
+          "successful": 100,
+          "timeouts": 0,
+          "otherErrors": 0,
+          "successP50Ms": 181,
+          "successP95Ms": 357,
+          "attemptP95Ms": 357
+        },
+        "/api/schedules": {
+          "requests": 100,
+          "successful": 3,
+          "timeouts": 97,
+          "otherErrors": 0,
+          "successP50Ms": 3184,
+          "successP95Ms": 4480,
+          "attemptP95Ms": 5004
+        }
+      },
+      "maxRssMiB": 243,
+      "persistedStaffSchedules": 1,
+      "acknowledgedWritesPersisted": true,
+      "duplicateIds": false
+    },
+    {
+      "viewers": 500,
+      "activeStaff": 20,
+      "durationMs": 20000,
+      "elapsedMs": 24962,
+      "offeredRequestsPerSecond": 101,
+      "all": {
+        "requests": 2020,
+        "successful": 51,
+        "timeouts": 1969,
+        "otherErrors": 0,
+        "successP50Ms": 2377,
+        "successP95Ms": 4804,
+        "attemptP95Ms": 5003
+      },
+      "viewer": {
+        "requests": 2000,
+        "successful": 51,
+        "timeouts": 1949,
+        "otherErrors": 0,
+        "successP50Ms": 2377,
+        "successP95Ms": 4804,
+        "attemptP95Ms": 5003
+      },
+      "staff": {
+        "requests": 20,
+        "successful": 0,
+        "timeouts": 20,
+        "otherErrors": 0,
+        "successP50Ms": null,
+        "successP95Ms": null,
+        "attemptP95Ms": 5001
+      },
+      "byRoute": {
+        "/api/scores": {
+          "requests": 500,
+          "successful": 4,
+          "timeouts": 496,
+          "otherErrors": 0,
+          "successP50Ms": 2089,
+          "successP95Ms": 4132,
+          "attemptP95Ms": 5002
+        },
+        "/api/rules": {
+          "requests": 500,
+          "successful": 3,
+          "timeouts": 497,
+          "otherErrors": 0,
+          "successP50Ms": 2648,
+          "successP95Ms": 4605,
+          "attemptP95Ms": 5003
+        },
+        "/api/auth/me": {
+          "requests": 500,
+          "successful": 42,
+          "timeouts": 458,
+          "otherErrors": 0,
+          "successP50Ms": 2166,
+          "successP95Ms": 4804,
+          "attemptP95Ms": 5003
+        },
+        "/api/schedules": {
+          "requests": 500,
+          "successful": 2,
+          "timeouts": 498,
+          "otherErrors": 0,
+          "successP50Ms": 1677,
+          "successP95Ms": 3684,
+          "attemptP95Ms": 5003
+        }
+      },
+      "maxRssMiB": 255,
+      "persistedStaffSchedules": 0,
+      "acknowledgedWritesPersisted": true,
+      "duplicateIds": false
+    }
+  ]
+}

@@ -1,0 +1,717 @@
+{
+  "completedAt": "2026-11-13T15:20:01.062Z",
+  "inheritedCommit": "3bab3f9e0708d2cdd85f1bae3a17ec16f090b1de",
+  "node": "v26.12.0",
+  "storage": "isolated local JSON",
+  "serverMode": "production build",
+  "interpretation": "PASS/FAIL compares observed behavior to the documented audit requirement. Exit 0 means the audit completed, not that the product passed all checks.",
+  "summary": {
+    "total": 84,
+    "passed": 64,
+    "failed": 20
+  },
+  "checks": [
+    {
+      "id": "AUTH-01",
+      "requirement": "Invalid credentials are rejected",
+      "outcome": "PASS"
+    },
+    {
+      "id": "GUEST-users",
+      "requirement": "Guests cannot GET /api/users",
+      "outcome": "PASS",
+      "observed": 403
+    },
+    {
+      "id": "GUEST-backup",
+      "requirement": "Guests cannot GET /api/backup",
+      "outcome": "PASS",
+      "observed": 403
+    },
+    {
+      "id": "GUEST-schedules",
+      "requirement": "Guests cannot POST /api/schedules",
+      "outcome": "PASS",
+      "observed": 403
+    },
+    {
+      "id": "GUEST-scores",
+      "requirement": "Guests cannot POST /api/scores",
+      "outcome": "PASS",
+      "observed": 403
+    },
+    {
+      "id": "GUEST-rules",
+      "requirement": "Guests cannot PUT /api/rules",
+      "outcome": "PASS",
+      "observed": 403
+    },
+    {
+      "id": "ASSIGN-01",
+      "requirement": "Account creation retains event assignments",
+      "outcome": "FAIL",
+      "observed": [
+        {
+          "name": "Superadmin",
+          "role": "superadmin"
+        },
+        {
+          "name": "Audit Reviewer",
+          "role": "admin"
+        },
+        {
+          "name": "Audit Basketball Staff",
+          "role": "officer"
+        },
+        {
+          "name": "Audit Volleyball Staff",
+          "role": "officer"
+        },
+        {
+          "name": "Audit Basketball Staff",
+          "role": "officer"
+        }
+      ]
+    },
+    {
+      "id": "RULE-01",
+      "requirement": "Scoring is blocked before rules are confirmed",
+      "outcome": "PASS"
+    },
+    {
+      "id": "ROLE-01",
+      "requirement": "Officers cannot change scoring rules",
+      "outcome": "PASS"
+    },
+    {
+      "id": "ROLE-02",
+      "requirement": "Officers cannot create accounts",
+      "outcome": "PASS"
+    },
+    {
+      "id": "ROLE-03",
+      "requirement": "Officers cannot download backups",
+      "outcome": "PASS"
+    },
+    {
+      "id": "RULE-02",
+      "requirement": "Administrators can confirm inherited rules",
+      "outcome": "PASS"
+    },
+    {
+      "id": "RULE-03",
+      "requirement": "Rules revision history survives the next request",
+      "outcome": "FAIL"
+    },
+    {
+      "id": "SCHED-01",
+      "requirement": "Staff can create a schedule",
+      "outcome": "PASS",
+      "observed": 200
+    },
+    {
+      "id": "SCHED-02",
+      "requirement": "Guests can see upcoming schedules",
+      "outcome": "PASS"
+    },
+    {
+      "id": "SCHED-03",
+      "requirement": "Sequential exact venue conflicts are rejected",
+      "outcome": "PASS"
+    },
+    {
+      "id": "ASSIGN-02",
+      "requirement": "Unassigned staff cannot edit another sport result",
+      "outcome": "FAIL",
+      "observed": 200
+    },
+    {
+      "id": "PUBLIC-01",
+      "requirement": "Unapproved match results are absent from public schedule responses",
+      "outcome": "FAIL",
+      "observed": {
+        "id": "72cc0075-5573-4580-b66c-4604dabd4a6a",
+        "event": "Basketball",
+        "category": "Men",
+        "round": "Finals",
+        "teamA": "CEA",
+        "teamB": "CAS",
+        "date": "2026-12-01",
+        "time": "09:00 AM",
+        "venue": "Audit Court A",
+        "status": "Completed",
+        "createdBy": "Audit Basketball Staff",
+        "createdAt": "2026-11-13T15:18:03.203Z",
+        "isAllColleges": false,
+        "winner": "CEA",
+        "scoreA": "81",
+        "scoreB": "79"
+      }
+    },
+    {
+      "id": "SCHED-04",
+      "requirement": "Officers cannot delete completed schedules",
+      "outcome": "PASS"
+    },
+    {
+      "id": "SCORE-01",
+      "requirement": "Staff submission starts Pending with server-calculated points",
+      "outcome": "PASS",
+      "observed": {
+        "id": "202f2483-b860-45ac-b1de-9f62b53b8538",
+        "event": "Basketball",
+        "category": "Men",
+        "detail": "Audit final",
+        "results": [
+          {
+            "collegeId": "CEA",
+            "place": "Champion",
+            "points": 25
+          },
+          {
+            "collegeId": "CAS",
+            "place": "1st Runner-Up",
+            "points": 20
+          }
+        ],
+        "by": "Audit Basketball Staff",
+        "status": "Pending",
+        "createdAt": "2026-11-13T15:18:11.453Z",
+        "auditTrail": [
+          {
+            "action": "Submitted",
+            "by": "Audit Basketball Staff",
+            "timestamp": "2026-11-13T15:18:11.453Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "PUBLIC-02",
+      "requirement": "Guests cannot retrieve pending submissions",
+      "outcome": "FAIL"
+    },
+    {
+      "id": "LINK-01",
+      "requirement": "Tally submissions reference the originating schedule",
+      "outcome": "FAIL",
+      "observed": {
+        "scheduleId": null
+      }
+    },
+    {
+      "id": "SCORE-02",
+      "requirement": "Duplicate event/category/detail is rejected",
+      "outcome": "PASS"
+    },
+    {
+      "id": "ROLE-04",
+      "requirement": "Officers cannot approve submissions",
+      "outcome": "PASS"
+    },
+    {
+      "id": "SCORE-03",
+      "requirement": "Administrators can approve submissions",
+      "outcome": "PASS"
+    },
+    {
+      "id": "PUBLIC-03",
+      "requirement": "Approved score is present for public tally calculation",
+      "outcome": "PASS"
+    },
+    {
+      "id": "RULE-04",
+      "requirement": "Rule changes preserve saved submission points",
+      "outcome": "PASS"
+    },
+    {
+      "id": "PUBLIC-04",
+      "requirement": "Guests cannot retrieve rejected submissions",
+      "outcome": "FAIL"
+    },
+    {
+      "id": "SCORE-04",
+      "requirement": "Other named officers cannot withdraw a submission",
+      "outcome": "PASS"
+    },
+    {
+      "id": "IDENTITY-01",
+      "requirement": "Same display name does not grant ownership of another account submission",
+      "outcome": "FAIL"
+    },
+    {
+      "id": "SCORE-05",
+      "requirement": "Staff can withdraw their own pending result",
+      "outcome": "PASS"
+    },
+    {
+      "id": "LINK-02",
+      "requirement": "Submission requires an applicable scheduled competition",
+      "outcome": "FAIL",
+      "observed": 201
+    },
+    {
+      "id": "VALID-01",
+      "requirement": "API rejects invalid schedule event/date/time/status/teams",
+      "outcome": "FAIL",
+      "observed": 200
+    },
+    {
+      "id": "VALID-02",
+      "requirement": "Score edit validates college/place/nonnegative points",
+      "outcome": "FAIL",
+      "observed": 200
+    },
+    {
+      "id": "REVIEW-01",
+      "requirement": "A changed approved result requires renewed approval",
+      "outcome": "FAIL",
+      "observed": "Approved"
+    },
+    {
+      "id": "CATALOG-Basketball",
+      "requirement": "Basketball: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Volleyball",
+      "requirement": "Volleyball: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Athletics",
+      "requirement": "Athletics: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Arnis",
+      "requirement": "Arnis: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Taekwondo",
+      "requirement": "Taekwondo: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Badminton",
+      "requirement": "Badminton: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Sepak Takraw",
+      "requirement": "Sepak Takraw: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Table Tennis",
+      "requirement": "Table Tennis: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Lawn Tennis",
+      "requirement": "Lawn Tennis: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Hip-Hop",
+      "requirement": "Hip-Hop: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Folkdance",
+      "requirement": "Folkdance: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Contemporary Dance",
+      "requirement": "Contemporary Dance: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-E-Games",
+      "requirement": "E-Games: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-E-games — CODM",
+      "requirement": "E-games — CODM: valid inherited placing is accepted",
+      "outcome": "FAIL",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 400,
+        "error": "Enter the two opposing colleges with matching BO3 win/loss results."
+      }
+    },
+    {
+      "id": "CATALOG-E-games — MLBB",
+      "requirement": "E-games — MLBB: valid inherited placing is accepted",
+      "outcome": "FAIL",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 400,
+        "error": "Enter the two opposing colleges with matching BO3 win/loss results."
+      }
+    },
+    {
+      "id": "CATALOG-Radio Drama",
+      "requirement": "Radio Drama: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Quiz Bowl/Academic Contest",
+      "requirement": "Quiz Bowl/Academic Contest: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Quartet",
+      "requirement": "Quartet: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Dance Sports",
+      "requirement": "Dance Sports: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Latin",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Vocal Duet",
+      "requirement": "Vocal Duet: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Chess",
+      "requirement": "Chess: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Extemporaneous Speaking",
+      "requirement": "Extemporaneous Speaking: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Dagliang Talumpati",
+      "requirement": "Dagliang Talumpati: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Story Telling",
+      "requirement": "Story Telling: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Pagkwekwento",
+      "requirement": "Pagkwekwento: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Pagsulat ng Sanaysay",
+      "requirement": "Pagsulat ng Sanaysay: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Essay Writing",
+      "requirement": "Essay Writing: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Pop Solo",
+      "requirement": "Pop Solo: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Kundiman",
+      "requirement": "Kundiman: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Instrumental Solo",
+      "requirement": "Instrumental Solo: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Photography",
+      "requirement": "Photography: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Charcoal Rendering",
+      "requirement": "Charcoal Rendering: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Pencil Drawing",
+      "requirement": "Pencil Drawing: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-On the Spot Poster Making",
+      "requirement": "On the Spot Poster Making: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Painting",
+      "requirement": "Painting: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "All Colleges / Open",
+        "place": "Champion",
+        "status": 201
+      }
+    },
+    {
+      "id": "CATALOG-Mr. and Ms. Intrams",
+      "requirement": "Mr. and Ms. Intrams: valid inherited placing is accepted",
+      "outcome": "PASS",
+      "observed": {
+        "category": "Men",
+        "place": "Mr. and Ms. Intrams",
+        "status": 201
+      }
+    },
+    {
+      "id": "BO3-E-games — CODM",
+      "requirement": "E-games — CODM: BO3 pair required by API is accepted",
+      "outcome": "FAIL",
+      "observed": {
+        "error": "Enter a valid placing or match result for each college, without duplicates."
+      }
+    },
+    {
+      "id": "BO3-E-games — MLBB",
+      "requirement": "E-games — MLBB: BO3 pair required by API is accepted",
+      "outcome": "FAIL",
+      "observed": {
+        "error": "Enter a valid placing or match result for each college, without duplicates."
+      }
+    },
+    {
+      "id": "ATHLETICS-Individual",
+      "requirement": "Individual: tied placings and sub-point annotations persist",
+      "outcome": "PASS",
+      "observed": 201
+    },
+    {
+      "id": "ATHLETICS-Relay",
+      "requirement": "Relay: tied placings and sub-point annotations persist",
+      "outcome": "PASS",
+      "observed": 201
+    },
+    {
+      "id": "VALID-03",
+      "requirement": "Division sport requires discipline/division detail",
+      "outcome": "FAIL",
+      "observed": 201
+    },
+    {
+      "id": "CONCURRENT-01",
+      "requirement": "Concurrent identical venue bookings create exactly one schedule",
+      "outcome": "FAIL",
+      "observed": [
+        200,
+        200
+      ]
+    },
+    {
+      "id": "CONCURRENT-02",
+      "requirement": "Concurrent duplicate submissions create exactly one tally entry",
+      "outcome": "PASS",
+      "observed": [
+        201,
+        409
+      ]
+    },
+    {
+      "id": "PERSIST-01",
+      "requirement": "Users, rules, scores and schedules survive process restart",
+      "outcome": "PASS"
+    },
+    {
+      "id": "PERSIST-02",
+      "requirement": "Score audit entries survive restart",
+      "outcome": "PASS"
+    },
+    {
+      "id": "BACKUP-01",
+      "requirement": "Export and restore recover fixture data",
+      "outcome": "PASS"
+    },
+    {
+      "id": "BACKUP-02",
+      "requirement": "Malformed backup is rejected",
+      "outcome": "FAIL"
+    },
+    {
+      "id": "AUTH-02",
+      "requirement": "Deleting an account revokes its existing write access",
+      "outcome": "FAIL",
+      "observed": 200
+    },
+    {
+      "id": "PERSIST-03",
+      "requirement": "API changes are persisted to the configured data directory",
+      "outcome": "PASS"
+    }
+  ]
+}

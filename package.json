@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "setup:local": "node scripts/setup-local.mjs",
+    "audit": "node scripts/audit.mjs",
+    "audit:load": "node scripts/load-audit.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"

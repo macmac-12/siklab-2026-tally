@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-13",
+  "timezone": "Asia/Manila",
+  "browser": "System Chromium via Playwright CLI",
+  "desktopViewport": {"width": 1440, "height": 1000},
+  "mobileViewport": {"width": 390, "height": 844},
+  "target": "Isolated production-build instance at localhost:3100; initial development-page check at 127.0.0.1:3000",
+  "data": "Synthetic browser fixtures only; separate from data/local",
+  "checks": [
+    {"id":"B01","outcome":"PASS","scenario":"Public empty state renders seven colleges and awaiting-results messages"},
+    {"id":"B02","outcome":"PASS","scenario":"Real UI login as superadmin, confirm scoring rules, sign out, and log in as officer"},
+    {"id":"B03","outcome":"FAIL","scenario":"Preserve unsaved rule changes on refresh","observed":"Changed Champion from 25 to 26 without saving, clicked Refresh; input reverted to 25. The automatic poll uses the same refresh function."},
+    {"id":"B04","outcome":"PASS","scenario":"Officer creates Basketball Men Finals, CEA versus CAS, 2026-12-01 09:00, test venue","observed":"POST schedules 200; Upcoming record rendered"},
+    {"id":"B05","outcome":"PASS","scenario":"Officer records CEA winner, score 81-79, Completed","observed":"PATCH schedules 200; completed match rendered with both scores"},
+    {"id":"B06","outcome":"PASS","scenario":"Forward this final to tally","observed":"CEA Champion 25, CAS 1st Runner-Up 20, detail Finals (CEA vs CAS); POST scores 201 Pending"},
+    {"id":"B07","outcome":"FAIL","scenario":"Preserve form entry after failed submission","observed":"Repeated identical submission returned 409; CEA placing changed from Champion to empty despite failure"},
+    {"id":"B08","outcome":"FAIL","scenario":"Hide unapproved match results from guests","observed":"After sign-out, schedule showed Completed, CEA winner, 81-79 while corresponding tally remained Pending; standings still zero"},
+    {"id":"B09","outcome":"PASS","scenario":"Reviewer approves through the interface","observed":"PATCH score 200; scoreboard rendered CEA 25, CAS 20, total 45"},
+    {"id":"B10","outcome":"FAIL","scenario":"Equal overall totals receive equal rank","observed":"An additional approved Women fixture produced CEA 45 and CAS 45, total 90; rank labels remained 01 and 02"},
+    {"id":"B11","outcome":"FAIL","scenario":"Usable phone-width navigation without page overflow","observed":"At 390px viewport, officer document was 519px wide; guest document was 466px wide and Login right edge was about 466px. Schedule filter/header also overflowed."},
+    {"id":"B12","outcome":"FAIL","scenario":"Report schedule read failure without pretending the schedule is empty","observed":"Mocked GET schedules to 503, clicked Refresh; previous schedule count of one disappeared, no status notice, LIVE OFFICIAL TALLY remained visible. Mock removed after test."},
+    {"id":"B13","outcome":"PASS","scenario":"Representative schedule families","observed":"API-created Athletics, Arnis Anyo, Folkdance and pageant fixtures used All Colleges; Taekwondo and CODM used two colleges. All six returned 200 and rendered in public schedules."},
+    {"id":"B14","outcome":"PASS","scenario":"Public event filter","observed":"Athletics filter displayed the single 100m Dash all-colleges fixture; Basketball filter displayed the completed match"}
+  ],
+  "consoleFindings": [
+    "Development page emitted a hydration mismatch: server/client last-refreshed timestamp differed in the Refresh button title.",
+    "favicon.ico returned 404.",
+    "409 from the duplicate submission and 503 from the deliberately mocked outage are expected test errors, not additional unexplained failures."
+  ],
+  "screenshots": [
+    "output/playwright/empty-desktop.png",
+    "output/playwright/staff-schedule-desktop.png",
+    "output/playwright/officer-mobile.png",
+    "output/playwright/public-mobile-pending.png",
+    "output/playwright/public-schedule-unapproved-mobile.png",
+    "output/playwright/review-approved-desktop.png",
+    "output/playwright/approved-scoreboard-desktop.png",
+    "output/playwright/approved-scoreboard-mobile.png",
+    "output/playwright/tied-standings-desktop.png",
+    "output/playwright/athletics-schedule-desktop.png",
+    "output/playwright/basketball-schedule-mobile-full.png"
+  ],
+  "limitations": [
+    "Viewport resizing is not testing a physical phone or mobile network.",
+    "All event-entry options were exercised by the separate API audit, not 36 full browser tournament runs.",
+    "Print controls were inspected but printed/PDF output was not verified.",
+    "Core review was exercised as superadmin in the browser; admin-only API review was separately tested."
+  ]
+}
