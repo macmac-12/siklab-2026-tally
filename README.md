@@ -1,12 +1,10 @@
-# Siklab 2026 — inherited tally and scheduling system
+# Siklab 2026
 
-Next.js/React/TypeScript application for CSPC Intramurals. Students view standings and schedules; staff record results; administrators review tally submissions.
+CSPC Intramurals schedules, approved results, and official college points. Built with Next.js, React, TypeScript and PostgreSQL. Local implementation only; deployment is a separate phase.
 
-**Local baseline only: not ready for public deployment.** The audit found missing event assignments, public access to unapproved results, scoring inconsistencies, and performance/reliability issues. See the [System audit](docs/SYSTEM_AUDIT.md) and [Prioritized roadmap](docs/ROADMAP.md).
+## Start locally
 
-## Local setup
-
-Run these commands from this directory. Node 26.12.0 and npm 12.2.1 were used for verification; the inherited README specified Node 20.9 or later.
+Requirements: Node.js 22+ (verified on 26.12), npm, Docker with Compose, and free ports 3000/5433.
 
 ```bash
 npm ci
@@ -14,77 +12,77 @@ npm run setup:local
 npm run dev -- --hostname 127.0.0.1
 ```
 
-- Management/public landing page: <http://127.0.0.1:3000/>
-- Dedicated public scoreboard: <http://127.0.0.1:3000/scoreboard>
-- Sign-in email: `admin@siklab.test`
-- Password: read `SUPERADMIN_PASSWORD` in the generated `.env.local`. The setup command generates a random password and session secret and never overwrites an existing file.
+- Students: http://127.0.0.1:3000
+- Staff sign-in: http://127.0.0.1:3000/staff/login
+- Workspace: http://127.0.0.1:3000/staff
 
-The first data request initializes the superadmin and empty data files. The local instance is intentionally empty: audit fixtures live separately under ignored `output/audit/` directories.
+The public site deliberately contains no staff sign-in or management controls. Share the staff URL privately. Actual access control is enforced by authenticated server requests and current event assignments.
 
-Stop a foreground server with **Ctrl+C**. Restart using the same command and environment file; data persists. The audit handoff leaves a detached local server running. Its process-group leader is recorded in `output/audit/local-server.pid`, with logs in `output/audit/local-server.log`. Inspect the recorded process before stopping that handoff instance:
+`setup:local` generates random credentials in ignored `.env.local`, starts the project's PostgreSQL container on **127.0.0.1:5433**, applies migrations, and seeds the official catalog. Read `SUPERADMIN_EMAIL` and `SUPERADMIN_PASSWORD` from that file locally; never commit them. Existing credentials and configuration are preserved. A reset account must choose its own password at next login.
 
-```bash
-ps -o pid,pgid,args -p "$(cat output/audit/local-server.pid)"
-kill -TERM -- "-$(cat output/audit/local-server.pid)"
-```
-
-Do not run a second server on port 3000. The loopback binding makes this instance accessible on this computer only; LAN/public deployment is a later phase.
-
-## Configuration and data
-
-`npm run setup:local` writes a private `.env.local` with an absolute `DATA_ROOT` pointing to `data/local`. It does not configure Supabase. Keep cloud variables unset when evaluating this local baseline.
-
-| Variable | Purpose |
-| --- | --- |
-| `SESSION_SECRET` | Signs eight-hour session tokens; use a private random value. |
-| `SUPERADMIN_EMAIL` | Local superadmin email. |
-| `SUPERADMIN_PASSWORD` | Bootstrap password; inherited code also synchronizes it on database reads. |
-| `DATA_ROOT` | Explicit persistent directory for local JSON files. |
-
-Runtime files are `users.json`, `rules.json`, `scores.json`, `schedules.json`, and `metadata.json`. The optional `db.json` legacy importer does not import every historical field; see the audit. Do not delete `DATA_ROOT` to restart the app.
-
-The inherited production default uses the operating system's temporary directory if `DATA_ROOT` is absent. Always set it explicitly for local production-build checks. Optional Supabase support expects a `siklab_state` key/value table, but the repository has no schema/migration or verified remote setup. Merely seeing a green Supabase badge is not evidence of a working connection.
-
-## How the existing interface works
-
-1. Open the landing page and click **Log In**.
-2. As superadmin, use **Scoring rules → Save scoring rules** to confirm the inherited rules. Submissions are blocked until this is done. This software confirmation does not establish that the rules are officially correct.
-3. Use **Accounts** to create an `admin` reviewer and `officer` staff accounts. There is currently no event-assignment field, password-reset flow, or account-edit form.
-4. Sign in as an officer. Open **Game Schedules & Results**, select event/category, participants or an all-colleges event, round, date, time, and venue, then create the schedule.
-5. Record match scores/winner or podium placers and mark the schedule completed.
-6. Use the completed schedule's **Forward to Tally** action to prefill the submission form. Review the placings carefully: the shortcut is not a reliable automatic tournament-points calculator.
-7. Submit the tally entry. It starts **Pending**. An administrator approves or rejects it under **Submissions**.
-8. Approved submissions contribute to overall college points and computed medals. The public screen polls approximately every 20 seconds and has a manual refresh button.
-
-**Important current distinction:** saving a match result and submitting official tally points are separate operations. The public schedule currently exposes match results immediately, and the public scores API exposes pending/rejected submissions. This violates the agreed requirement that results remain private until approved.
-
-Scoring covers sports, E-games, cultural/academic contests, and pageant entries. Specific CODM/MLBB submissions currently fail because the API and rules disagree. Do not use test results as official event records.
-
-## Verification commands
+The initial migration preserves legacy account IDs and password hashes. It refuses to guess a migration for nonempty legacy schedules/scores. The original local files are backed up under ignored `data/backups/`. Ordinary reads no longer hash the bootstrap password, and changing the environment bootstrap password does not reset an existing account.
 
 ```bash
-DATA_ROOT="$PWD/output/audit/build-data" NEXT_TELEMETRY_DISABLED=1 npm run build
-npx tsc --noEmit
-npm run audit
-npm run audit:load
+# Stop/start only this project's database; retain its volume.
+docker compose --env-file .env.local stop db
+docker compose --env-file .env.local up -d --wait db
+
+# Production build and local production server.
+npm run build
+npm start -- --hostname 127.0.0.1
+
+# Apply future schema migrations to DATABASE_URL.
+npm run db:migrate
 ```
 
-The build includes type checking. `audit` and `audit:load` start their own production-build servers on temporary loopback ports, generate private disposable credentials, and use separate data directories. They never target the running port-3000 instance or a cloud backend. The audit scripts use native TypeScript loading and were verified with Node 26.12.0; use that runtime if an older Node version rejects the `.ts` import. Build first, and run the audits sequentially. Avoid running a build or browser automation during load measurements.
+Do not use `docker compose down -v` unless deliberately deleting the database. Runtime records live in the named PostgreSQL volume, not temporary files. A database failure produces an error instead of a silent local-storage fallback. For later HTTPS deployment, set `COOKIE_SECURE=true`; local HTTP testing leaves it unset.
 
-- `audit`: API, permissions, all configured event entries, concurrency, restart, and backup/restore checks.
-- `audit:load`: bounded 1/10/50/100/500-viewer polling screen, with up to 20 staff writes. Allow several minutes.
-- Results: `output/audit/latest-functional.json` and `output/audit/latest-load.json`; detailed logs and data are in timestamped sibling directories.
-- **Audit exit code 0 means the audit completed, not that all product requirements passed.** Check the report's failed checks. Infrastructure failures exit nonzero.
+## How scoring works
 
-Browser screenshots and snapshots are under `output/playwright/`. Test backups contain password hashes; runtime artifacts, environment files, and browser sessions are ignored by Git. Sanitized result summaries are retained under `docs/evidence/`.
+1. Staff manage only assigned categories; administrators can manage all events.
+2. Create a scheduled competition with its real entries and format.
+3. Save a result draft, then submit it for administrator review.
+4. Approval publishes the result. **A match win gives zero official college points.**
+5. When an event/category is complete, submit its championship standings separately. Their approval adds official points once.
 
-## Troubleshooting
+Athletics, Arnis and Taekwondo use reviewed final discipline/division **sub-points**, separately for Men and Women, to determine championship standings. The resulting general points enter the overall tally once per category. Preliminary results and individual bouts never become extra awards.
 
-- **Port already in use:** inspect `ss -ltnp`; stop only the identified Siklab server or use `--port 3001`.
-- **Cannot sign in:** use the credentials in `.env.local`, not the inherited example password. Restart after editing environment variables.
-- **Scores cannot be submitted:** save scoring rules first; check the notice. CODM/MLBB has a separate confirmed defect.
-- **Scores missing from standings:** confirm approval status; recording a schedule winner alone does not add tally points.
-- **Data seems to disappear:** check the active `DATA_ROOT` and cloud environment variables. Do not change storage backends casually or restore over live data.
-- **Slow refresh:** this baseline serializes database work and performs expensive password verification on reads. The audit documents the bottleneck; switching to a production build alone does not solve it.
+CODM and MLBB championships are separate awards (both wins = 40 points). Dance Sports styles and instrumental categories are also separate. Cheerdance and pageant points remain blocked pending official rule confirmation. See [the rule reference](docs/OFFICIAL_RULES.md) for the full interpretation and unresolved proposal details.
 
-No cloud service, deployment, remote push, or official tournament data migration is part of this baseline setup.
+Any administrator can approve a correction. The previous approved result remains public until its replacement is approved. A result correction affecting a published championship replaces both result and award atomically. Historical revisions and reasons are retained.
+
+## Useful workflows
+
+- **Students:** view schedules/results, use shareable filters, inspect championship point breakdowns, print or export the current page. `/display` is a public projector view.
+- **Game staff:** choose an event, create its schedules, enter results, and revise rejected submissions. Unknown end times are allowed; “follows another competition” supports game succession.
+- **Administrators:** review submissions; manage accounts and assignments; confirm versioned rules and TBA disciplines.
+- **Superadministrator:** download private backups and validate/restore them. Restore requires a preview and the current password, saves a pre-restore recovery copy, and revokes every session.
+
+See [role guides](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), [verification](docs/VERIFICATION.md), and [roadmap](docs/ROADMAP.md).
+
+## Tests and isolated rehearsal
+
+```bash
+npm run typecheck
+npm test
+npm run build
+
+# Starts a separate production app on 3110 with its own disposable database.
+node --import tsx scripts/verification-server.ts
+
+# In another terminal, while the rehearsal server is running:
+node scripts/verify-api.mjs
+node scripts/verify-load.mjs
+
+# Optional Chromium browser rehearsal and controlled database restart test.
+python scripts/verify-browser.py
+node scripts/verify-recovery.mjs
+```
+
+Database tests create and drop a separate `siklab_test_*` database; they require the local PostgreSQL owner account. The rehearsal server creates `siklab_rehearsal_*`, seeds clearly marked sample records, and stores test credentials only in ignored `output/verification/session.json`. Stop it with Ctrl+C to remove its database. Never point rehearsal tools at an event-day database.
+
+The browser rehearsal changes its isolated fixture standings; run it after the load test or restart the rehearsal server to obtain fresh fixtures before benchmarking. The recovery script briefly stops/restarts this project's PostgreSQL container, so run it while no real event work is in progress.
+
+The default load test lasts ten minutes with 500 viewers, 18 game heads and 2 reviewers. It checks response times, errors and persisted acknowledgements. `LOAD_SECONDS` allows a shorter diagnostic run; a short run is not the ten-minute acceptance result.
+
+The earlier `npm run audit` and `audit:load` scripts document the inherited API and are archival baseline tools, not tests for the redesigned API. They refuse to launch against the new database architecture. Their reports remain unchanged for comparison.

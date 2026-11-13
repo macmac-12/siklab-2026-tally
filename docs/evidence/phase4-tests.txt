@@ -1,0 +1,30 @@
+npm notice run siklab-2026-tally@1.0.0 test
+npm notice run tsx --test tests/*.test.ts
+✔ CODM and MLBB championships contribute 40; no generic E-games award (36.292146ms)
+✔ Dance Sports 24 and Instrumental Solo 10 across independent categories (0.778326ms)
+✔ both athletes count; relay points differ; one final award (0.813308ms)
+✔ unresolved rules and tied championships block final awards (0.845841ms)
+✔ overall ties share a rank and no awards shows unranked (1.681028ms)
+✔ placements reject duplicates, missing entrants, tied ranks and rank gaps (0.499262ms)
+✔ catalog uses offered categories and exact weight labels (0.724988ms)
+✔ complete podium required before official points are awarded (0.792206ms)
+✔ MLBB BO3 internal points stay distinct from college awards (16.415951ms)
+✔ CODM double forfeit is two losses, not a drawn match (2.615952ms)
+✔ assigned event permissions hold at mutation boundary (3098.091132ms)
+✔ invalid date and malformed scores rejected, no partial writes (194.435531ms)
+✔ overlap and stale versions cannot silently overwrite (131.452627ms)
+✔ pending results private; retry and concurrent approval safe; match gives zero points (113.77165ms)
+✔ draft survives validation failure; rejection permits corrected resubmission (201.06734ms)
+✔ independent E-games championship award and reviewed correction remain atomic (127.050155ms)
+✔ inactive disciplines and unconfirmed awards blocked; legitimate second athlete accepted (61.653756ms)
+✔ Athletics aggregate, all disciplines resolved and double entrant contribution (365.013944ms)
+✔ disabled staff loses access and rule history persists (55.711526ms)
+✔ backup preview rolls back; invalid reference and negative points rejected; restore exact data (2822.839255ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8394.256698

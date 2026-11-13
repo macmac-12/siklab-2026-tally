@@ -1,0 +1,11 @@
+{
+  "time": "2026-11-13T18:07:36.686Z",
+  "publicUrl": "http://127.0.0.1:3000",
+  "staffUrl": "http://127.0.0.1:3000/staff/login",
+  "categories": 49,
+  "disciplines": 48,
+  "schedules": 0,
+  "awards": 0,
+  "administratorLoginVerified": true,
+  "dataIsolationVerified": true
+}

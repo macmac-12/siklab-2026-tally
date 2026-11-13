@@ -1278,7 +1278,7 @@ hr {
   @page {
     margin: 15mm;
   }
-  html,
+  :root,
   body {
     background: white;
     font-size: 10pt;

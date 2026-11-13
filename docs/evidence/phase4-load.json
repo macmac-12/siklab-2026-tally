@@ -1,0 +1,46 @@
+{
+  "time": "2026-11-13T17:59:50.157Z",
+  "durationSeconds": 600,
+  "production": true,
+  "fixtureSchedules": 423,
+  "host": {
+    "cpu": "Intel(R) Core(TM) i7-6500U CPU @ 2.50GHz",
+    "logicalCpus": 4,
+    "totalMemoryMiB": 7811,
+    "node": "v26.12.0"
+  },
+  "maxServerRssMiB": 408,
+  "viewers": 500,
+  "staff": 20,
+  "workload": "20s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results; logins warmed before timing.",
+  "summary": {
+    "public": {
+      "requests": 14997,
+      "successes": 14997,
+      "failures": 0,
+      "p95Ms": 105,
+      "maxMs": 696
+    },
+    "write": {
+      "requests": 1800,
+      "successes": 1800,
+      "failures": 0,
+      "p95Ms": 163,
+      "maxMs": 1294
+    },
+    "private": {
+      "requests": 0,
+      "successes": 0,
+      "failures": 0,
+      "p95Ms": 0,
+      "maxMs": 0
+    }
+  },
+  "errorRate": 0,
+  "acknowledgedWrites": 1800,
+  "persistedAcknowledgements": 1800,
+  "lostAcknowledgedWrites": 0,
+  "maxDatabaseConnections": 7,
+  "failures": [],
+  "pass": true
+}

@@ -1,0 +1,38 @@
+npm notice run siklab-2026-tally@1.0.0 build
+npm notice run next build
+   ▲ Next.js 15.5.29
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 6.4s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/12) ...
+   Generating static pages (3/12) 
+   Generating static pages (6/12) 
+   Generating static pages (9/12) 
+ ✓ Generating static pages (12/12)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      123 B         115 kB
+├ ○ /_not-found                            999 B         104 kB
+├ ƒ /api/[...path]                         123 B         103 kB
+├ ○ /display                               123 B         115 kB
+├ ○ /icon.svg                                0 B            0 B
+├ ○ /results                               123 B         115 kB
+├ ○ /schedules                             123 B         115 kB
+├ ○ /scoreboard                            123 B         103 kB
+├ ○ /staff                               11.9 kB         118 kB
+├ ○ /staff/login                         1.52 kB         108 kB
+└ ○ /standings                             122 B         115 kB
++ First Load JS shared by all             103 kB
+  ├ chunks/255-73938ce8a8eac1ad.js       46.6 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          1.92 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

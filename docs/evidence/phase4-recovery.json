@@ -1,0 +1,14 @@
+{
+  "time": "2026-11-13T18:00:37.243Z",
+  "checks": [
+    {
+      "name": "Database outage fails explicitly without fallback",
+      "pass": true,
+      "status": 503
+    },
+    {
+      "name": "Database container restart preserves approved results, awards, schedules and version",
+      "pass": true
+    }
+  ]
+}

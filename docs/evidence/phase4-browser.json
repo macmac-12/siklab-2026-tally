@@ -1,0 +1,198 @@
+{
+  "url": "http://127.0.0.1:3111",
+  "checks": [
+    {
+      "name": "staff sees only assigned event and no reviewer tools",
+      "pass": true,
+      "evidence": {
+        "assignedEvent": "Badminton Men"
+      }
+    },
+    {
+      "name": "create a schedule through the staff form",
+      "pass": true,
+      "evidence": {
+        "schedule": "Browser rehearsal final"
+      }
+    },
+    {
+      "name": "save and reopen draft; invalid result retains input",
+      "pass": true,
+      "evidence": {
+        "draftRestored": true,
+        "failedInputPreserved": true
+      }
+    },
+    {
+      "name": "pending score absent from guest projection",
+      "pass": true,
+      "evidence": {
+        "pendingHidden": true
+      }
+    },
+    {
+      "name": "reviewer approves result in the UI",
+      "pass": true,
+      "evidence": {
+        "approvedVisible": true,
+        "matchAddedPoints": false
+      }
+    },
+    {
+      "name": "submit and approve separate championship award in UI",
+      "pass": true,
+      "evidence": {
+        "ccsPoints": 20,
+        "casPoints": 15
+      }
+    },
+    {
+      "name": "correction review preserves old result until approved",
+      "pass": true,
+      "evidence": {
+        "oldVisibleUntilReview": true,
+        "replacementScore": "3\u20131",
+        "championshipUnchanged": 20
+      }
+    },
+    {
+      "name": "public pages stay public while administrator is signed in",
+      "pass": true,
+      "evidence": {
+        "staffLinks": 0
+      }
+    },
+    {
+      "name": "responsive public views and shareable filters",
+      "pass": true,
+      "evidence": [
+        {
+          "path": "/",
+          "viewport": 360,
+          "document": 360
+        },
+        {
+          "path": "/schedules?college=CCS",
+          "viewport": 360,
+          "document": 360
+        },
+        {
+          "path": "/results?category=badminton-men",
+          "viewport": 360,
+          "document": 360
+        },
+        {
+          "path": "/standings",
+          "viewport": 360,
+          "document": 360
+        },
+        {
+          "path": "/display",
+          "viewport": 360,
+          "document": 360
+        },
+        {
+          "path": "/",
+          "viewport": 390,
+          "document": 390
+        },
+        {
+          "path": "/schedules?college=CCS",
+          "viewport": 390,
+          "document": 390
+        },
+        {
+          "path": "/results?category=badminton-men",
+          "viewport": 390,
+          "document": 390
+        },
+        {
+          "path": "/standings",
+          "viewport": 390,
+          "document": 390
+        },
+        {
+          "path": "/display",
+          "viewport": 390,
+          "document": 390
+        },
+        {
+          "path": "/",
+          "viewport": 768,
+          "document": 768
+        },
+        {
+          "path": "/schedules?college=CCS",
+          "viewport": 768,
+          "document": 768
+        },
+        {
+          "path": "/results?category=badminton-men",
+          "viewport": 768,
+          "document": 768
+        },
+        {
+          "path": "/standings",
+          "viewport": 768,
+          "document": 768
+        },
+        {
+          "path": "/display",
+          "viewport": 768,
+          "document": 768
+        },
+        {
+          "path": "/",
+          "viewport": 1440,
+          "document": 1440
+        },
+        {
+          "path": "/schedules?college=CCS",
+          "viewport": 1440,
+          "document": 1440
+        },
+        {
+          "path": "/results?category=badminton-men",
+          "viewport": 1440,
+          "document": 1440
+        },
+        {
+          "path": "/standings",
+          "viewport": 1440,
+          "document": 1440
+        },
+        {
+          "path": "/display",
+          "viewport": 1440,
+          "document": 1440
+        }
+      ]
+    },
+    {
+      "name": "network failure preserves data and reports staleness",
+      "pass": true,
+      "evidence": {
+        "dataRetained": true,
+        "recovered": true
+      }
+    },
+    {
+      "name": "print output includes filtered scope and update time",
+      "pass": true,
+      "evidence": {
+        "pdf": "output/playwright/phase4-results-print.pdf"
+      }
+    },
+    {
+      "name": "staff form fits narrow phone and keyboard reaches fields",
+      "pass": true,
+      "evidence": {
+        "viewport": 360,
+        "document": 360,
+        "keyboardNext": "SELECT"
+      }
+    }
+  ],
+  "passed": 12,
+  "total": 12
+}

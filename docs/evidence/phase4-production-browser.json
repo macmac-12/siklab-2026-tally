@@ -1,0 +1,20 @@
+{
+  "url": "http://127.0.0.1:3112",
+  "checks": [
+    {
+      "name": "Production public pages, responsive views, CSV and print",
+      "pass": true,
+      "evidence": {
+        "publicStaffLinks": 0,
+        "viewports": [
+          360,
+          1440
+        ],
+        "download": "siklab-schedules.csv",
+        "publicAuthRequests": 0,
+        "pageErrors": [],
+        "print": "output/playwright/phase4-production-print.pdf"
+      }
+    }
+  ]
+}
