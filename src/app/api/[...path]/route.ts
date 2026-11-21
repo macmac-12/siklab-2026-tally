@@ -61,7 +61,11 @@ async function handle(request: Request) {
         ...publicCacheHeaders(freshUntil),
         Vary: "Accept-Encoding",
       };
-      if (request.headers.get("if-none-match") === etag)
+      // Compression at the CDN may turn our strong ETag into a weak validator.
+      const matches = request.headers.get("if-none-match")?.split(",").some(value =>
+        value.trim() === "*" || value.trim().replace(/^W\//, "") === etag,
+      );
+      if (matches)
         return new Response(null, { status: 304, headers });
       return new Response(body, {
         headers: { ...headers, "Content-Type": "application/json" },

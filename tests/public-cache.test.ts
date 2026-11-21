@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { gzipSync } from "node:zlib";
 import {
+  createLocalPublicCacheAdapter,
   createPublicSnapshotCache,
+  invalidatePublicData,
+  localPublicCacheEnabled,
+  readPublicSnapshot,
   publicCacheHeaders,
   publicCacheNamespace,
 } from "../src/lib/server/cache";
@@ -371,4 +375,101 @@ test("only public changes invalidate shared data; unpublished work and accounts 
   assert.equal(decision({ action: "bracket.save", publish: false }), false);
   for (const action of ["result.save", "award.submit", "account.save"])
     assert.equal(decision({ action }), false, action);
+});
+
+test("local cache emulation requires explicit opt-in and a disposable rehearsal database, never Vercel", () => {
+  const env = {
+    LOCAL_PUBLIC_CACHE: "true",
+    DATABASE_URL: "postgres://local:private@localhost/siklab_rehearsal_123",
+  };
+  assert.equal(localPublicCacheEnabled(env), true);
+  assert.equal(
+    localPublicCacheEnabled({ ...env, NODE_ENV: "production" }),
+    true,
+  );
+  assert.equal(
+    localPublicCacheEnabled({ ...env, LOCAL_PUBLIC_CACHE: "false" }),
+    false,
+  );
+  assert.equal(
+    localPublicCacheEnabled({ DATABASE_URL: env.DATABASE_URL }),
+    false,
+  );
+  for (const VERCEL of ["1", "true", "0"])
+    assert.equal(localPublicCacheEnabled({ ...env, VERCEL }), false);
+  for (const name of [
+    "postgres",
+    "siklab",
+    "siklab_test_123",
+    "real_siklab_rehearsal_123",
+  ])
+    assert.equal(
+      localPublicCacheEnabled({
+        ...env,
+        DATABASE_URL: env.DATABASE_URL.replace("siklab_rehearsal_123", name),
+      }),
+      false,
+    );
+  assert.equal(
+    localPublicCacheEnabled({ ...env, DATABASE_URL: "invalid" }),
+    false,
+  );
+});
+
+test("local rehearsal adapter uses the compressed engine's expiry and tag invalidation", async () => {
+  let now = 100_000;
+  const adapter = createLocalPublicCacheAdapter(() => now);
+  const options = {
+    ...adapter,
+    key: "rehearsal",
+    tag: "rehearsal-public",
+    now: () => now,
+  };
+  const first = createPublicSnapshotCache(options),
+    second = createPublicSnapshotCache(options);
+  let loads = 0;
+  const load = async () => ({ approved: ++loads });
+  const original = await first.read(load);
+  assert.equal((await second.read(load)).data.approved, 1);
+  now += 15_000;
+  assert.equal((await second.read(load)).data.approved, 2);
+  assert.equal(
+    publicCacheHeaders(original.freshUntil, now)["Vercel-CDN-Cache-Control"],
+    "no-store",
+  );
+  await first.invalidate();
+  assert.equal((await second.read(load)).data.approved, 3);
+});
+
+test("changing the local rehearsal flag switches the actual shared loader without retaining emulated entries", async () => {
+  const keys = ["VERCEL", "LOCAL_PUBLIC_CACHE", "DATABASE_URL"] as const;
+  const original = Object.fromEntries(
+    keys.map((key) => [key, process.env[key]]),
+  );
+  try {
+    delete process.env.VERCEL;
+    process.env.DATABASE_URL =
+      "postgres://local:private@localhost/siklab_rehearsal_switch_test";
+    process.env.LOCAL_PUBLIC_CACHE = "true";
+    let loads = 0;
+    const load = async () => ++loads;
+    assert.equal((await readPublicSnapshot(load)).data, 1);
+    assert.equal((await readPublicSnapshot(load)).data, 1);
+    await invalidatePublicData();
+    assert.equal((await readPublicSnapshot(load)).data, 2);
+    process.env.LOCAL_PUBLIC_CACHE = "false";
+    assert.equal((await readPublicSnapshot(load)).data, 3);
+    assert.equal((await readPublicSnapshot(load)).data, 4);
+    process.env.LOCAL_PUBLIC_CACHE = "true";
+    assert.equal((await readPublicSnapshot(load)).data, 5);
+    assert.equal((await readPublicSnapshot(load)).data, 5);
+    process.env.DATABASE_URL = "postgres://local:private@localhost/real_event";
+    assert.equal((await readPublicSnapshot(load)).data, 6);
+    assert.equal((await readPublicSnapshot(load)).data, 7);
+  } finally {
+    for (const key of keys) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  }
 });

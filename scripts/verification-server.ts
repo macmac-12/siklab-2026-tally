@@ -348,6 +348,7 @@ async function main() {
         databaseUrl: process.env.DATABASE_URL,
         database: name,
         serverPid: server.pid,
+        publicCacheEmulated: process.env.LOCAL_PUBLIC_CACHE === "true",
         email: process.env.SUPERADMIN_EMAIL,
         password: process.env.SUPERADMIN_PASSWORD,
         adminId: admin.id,

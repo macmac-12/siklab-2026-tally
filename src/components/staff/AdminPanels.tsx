@@ -464,7 +464,7 @@ export function BackupPanel() {
       setError(
         (timeout || e instanceof TypeError) &&
           (label === "restore" || label === "reset")
-          ? "The response timed out. The operation may have completed. Sign in again and check the saved data before attempting another restore or reset."
+          ? "The operation could not be confirmed. It may have completed. Sign in again and check the saved data before attempting another restore or reset."
           : e instanceof Error
             ? e.message
             : "The request could not be completed. Try again.",

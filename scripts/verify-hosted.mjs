@@ -1,7 +1,7 @@
 /** Sequential pre-launch acceptance. This changes rehearsal data; it is not a load test. */
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdir, writeFile, chmod } from "node:fs/promises";
+import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -18,6 +18,37 @@ const report = {
   requiresCleanBaselineRestore: false,
 };
 let base, email, rootPassword, rootCookie, officerCookie;
+const SAFE_ERRORS = new Set([
+  "Choose a start time or the preceding match.",
+  "Choose distinct entries belonging to this category.",
+  "Choose a confirmed, active discipline for this category.",
+  "Current password is incorrect.",
+  "Change your temporary password before continuing.",
+  "An active superadministrator account is required.",
+  "Saved data changed after this preview. Preview again before continuing.",
+  "Confirm replacement and enter your current password.",
+  "Confirm the preview checksum and current password.",
+  "Validate and preview this operation before confirming it.",
+  "This maintenance preview has expired. Start again.",
+  "Backup checksum does not match its contents.",
+  "Private backup storage is not configured.",
+  "The private backup upload could not be prepared.",
+  "The private backup download could not be prepared.",
+  "The private recovery copy could not be saved. No records were replaced.",
+]);
+const safeError = (value) =>
+  typeof value === "string" && SAFE_ERRORS.has(value) ? value : "";
+const reusableSession = (session, url, address) =>
+  session?.url === url &&
+  session?.email === address &&
+  session?.passwordChangeCompleted === true &&
+  typeof session.password === "string" &&
+  session.password.length >= 12 &&
+  session.password.length <= 72;
+const cleanCompetition = (data) =>
+  ["schedules", "revisions", "brackets"].every(
+    (key) => Array.isArray(data[key]) && data[key].length === 0,
+  );
 
 async function privateJson(path, value) {
   await mkdir(dirname(path), { recursive: true });
@@ -129,10 +160,11 @@ const request = (
     },
   );
 function status(result, expected = 200) {
+  const validation = safeError(result.data?.error);
   assert.equal(
     result.status,
     expected,
-    `Unexpected HTTP status; expected ${expected}, received ${result.status}.`,
+    `Unexpected HTTP status; expected ${expected}, received ${result.status}.${validation ? ` ${validation}` : ""}`,
   );
   return result.data;
 }
@@ -285,10 +317,46 @@ async function main() {
   base = target.origin;
   email = process.env.SUPERADMIN_EMAIL;
   rootPassword = process.env.SUPERADMIN_PASSWORD;
+  // Preserve the original cloud bootstrap environment for the final baseline restore.
+  let resumed = false;
+  try {
+    const saved = JSON.parse(
+      await readFile(`${output}/hosted-session-private.json`, "utf8"),
+    );
+    if (reusableSession(saved, base, email)) {
+      rootPassword = saved.password;
+      resumed = true;
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT")
+      throw new Error(
+        "The private rehearsal session file is unreadable; inspect it before retrying.",
+      );
+  }
   report.url = base;
   report.requiresCleanBaselineRestore = true;
   rootCookie = await login(email, rootPassword);
   let initial = await state();
+  if (resumed) {
+    assert(
+      cleanCompetition(initial),
+      "Saved rehearsal credentials may only resume against an empty competition dataset. Restore the saved baseline first.",
+    );
+    report.reusedPrivateSession = true;
+    try {
+      const previous = JSON.parse(
+        await readFile(`${output}/hosted-verification.json`, "utf8"),
+      );
+      report.priorPasswordGatePassed =
+        previous.url === base &&
+        (previous.priorPasswordGatePassed === true ||
+          previous.checks?.some(
+            (row) => row.pass && row.evidence?.passwordGateExercised === true,
+          ) === true);
+    } catch {
+      report.priorPasswordGatePassed = false;
+    }
+  }
   await check(
     "temporary superadministrator password must be changed and old sessions are revoked",
     async () => {
@@ -328,13 +396,14 @@ async function main() {
         passwordChangeCompleted: true,
       });
       assert.equal(initial.user.mustReset, false);
-      return { passwordGateExercised };
+      return {
+        passwordGateExercised,
+        passwordGatePreviouslyPassed: report.priorPasswordGatePassed === true,
+      };
     },
   );
   assert(
-    !initial.schedules.length &&
-      !initial.revisions.length &&
-      !initial.brackets.length,
+    cleanCompetition(initial),
     "Hosted verification requires an empty pre-event competition baseline. Restore the saved clean baseline first.",
   );
   assert.equal(initial.categories.length, 49);
@@ -366,11 +435,19 @@ async function main() {
     async () => {
       const temporary = password(),
         replacement = password();
-      const address = `deployment-${randomUUID()}@siklab.test`;
+      const previous = initial.users.find(
+        (user) =>
+          user.role === "officer" &&
+          user.name === "Deployment rehearsal officer" &&
+          /^deployment-[a-f0-9-]+@siklab\.test$/.test(user.email),
+      );
+      const address =
+        previous?.email || `deployment-${randomUUID()}@siklab.test`;
       officer = {
         id: (
           await command({
             action: "account.save",
+            ...(previous ? { id: previous.id } : {}),
             name: "Deployment rehearsal officer",
             email: address,
             role: "officer",
@@ -439,8 +516,8 @@ async function main() {
             ),
             venue,
             date,
-            startsAt: null,
-            endsAt: null,
+            startsAt: `${date}T01:00:00.000Z`,
+            endsAt: `${date}T02:00:00.000Z`,
             followsId: null,
             status: matchStatus,
             reason: "",
@@ -511,6 +588,29 @@ async function main() {
       return {
         warmedCache: cached.response.headers.get("x-vercel-cache"),
         filterVariants: variants.length + 1,
+      };
+    },
+  );
+
+  await check(
+    "expired CDN response accepts a weak ETag at the origin without poisoning new public requests",
+    async () => {
+      const cached = await warm(publicPath);
+      const tag = cached.response.headers.get("etag");
+      assert(tag, "Public response is missing an ETag.");
+      const weak = tag.startsWith("W/") ? tag : `W/${tag}`;
+      await delay(16_000);
+      const expired = await request(publicPath, {
+        headers: { "if-none-match": weak, pragma: "no-cache" },
+      });
+      status(expired, 304);
+      const fresh = await request(publicPath);
+      status(fresh);
+      assert.equal(fresh.data.schedules.length, 2);
+      return {
+        waitedMs: 16_000,
+        conditionalStatus: expired.status,
+        cache: expired.response.headers.get("x-vercel-cache"),
       };
     },
   );
@@ -854,6 +954,37 @@ if (process.argv.includes("--help")) {
   assert.equal(
     tableDigest([{ a: 1, b: 2 }, { a: 3 }]),
     tableDigest([{ a: 3 }, { b: 2, a: 1 }]),
+  );
+  assert.equal(
+    safeError("Choose a start time or the preceding match."),
+    "Choose a start time or the preceding match.",
+  );
+  assert.equal(safeError("Unsafe https://example.invalid/?token=secret"), "");
+  assert.equal(
+    reusableSession(
+      {
+        url: "https://test.invalid",
+        email: "root@test.invalid",
+        password: "test-password-value",
+        passwordChangeCompleted: true,
+      },
+      "https://test.invalid",
+      "root@test.invalid",
+    ),
+    true,
+  );
+  assert.equal(
+    reusableSession(
+      {
+        url: "https://other.invalid",
+        email: "root@test.invalid",
+        password: "test-password-value",
+        passwordChangeCompleted: true,
+      },
+      "https://test.invalid",
+      "root@test.invalid",
+    ),
+    false,
   );
   console.log("PASS offline fixture/checksum/payload-boundary self-test");
 } else {

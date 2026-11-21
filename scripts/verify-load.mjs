@@ -91,6 +91,10 @@ async function staff(user, i) {
       key = randomUUID();
     if (tick % 3 === 0) {
       const { publishedId, ...schedule } = s;
+      // The student UI fixture deliberately includes weather postponements.
+      // Staff must explicitly resume them before the normal result workload.
+      if (["cancelled", "postponed"].includes(schedule.status))
+        schedule.status = "upcoming";
       const r = await req("staff/command", {
         cookie: user.cookie,
         key,
@@ -106,6 +110,7 @@ async function staff(user, i) {
       if (r) {
         acknowledged.push(key);
         s.version++;
+        s.status = schedule.status;
         s.title = `Rehearsal ${i + 1} · update ${tick}`;
       }
     } else if (!queue.some((q) => q.scheduleId === s.id)) {
@@ -222,6 +227,9 @@ const report = {
   time: new Date().toISOString(),
   durationSeconds: Math.round((Date.now() - started) / 1000),
   production: true,
+  hosted: false,
+  cdn: false,
+  sharedCache: config.publicCacheEmulated ? "Single-process emulation of the deployed shared-cache TTL/invalidation contract" : "Disabled",
   fixtureSchedules: initial.schedules.length,
   host: {
     cpu: os.cpus()[0]?.model,

@@ -166,20 +166,73 @@ export function publicCacheNamespace(
 }
 
 export const publicCacheTag = () => publicCacheNamespace();
+
+export function localPublicCacheEnabled(
+  env: Record<string, string | undefined> = process.env,
+) {
+  if (env.VERCEL || env.LOCAL_PUBLIC_CACHE !== "true" || !env.DATABASE_URL)
+    return false;
+  try {
+    return /^\/siklab_rehearsal_/.test(new URL(env.DATABASE_URL).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Single-process rehearsal substitute for Runtime Cache, never a CDN emulator. */
+export function createLocalPublicCacheAdapter(now = Date.now) {
+  const entries = new Map<
+    string,
+    {
+      value: unknown;
+      expiresAt: number;
+      tags: string[];
+    }
+  >();
+  const cache: CacheAccess = {
+    get: async (key) => {
+      const entry = entries.get(key);
+      if (entry && entry.expiresAt > now()) return structuredClone(entry.value);
+      entries.delete(key);
+      return undefined;
+    },
+    set: async (key, value, options) => {
+      entries.set(key, {
+        value: structuredClone(value),
+        expiresAt: now() + options.ttl * 1000,
+        tags: [...options.tags],
+      });
+    },
+  };
+  const purge = async (tag: string) => {
+    for (const [key, entry] of entries)
+      if (entry.tags.includes(tag)) entries.delete(key);
+  };
+  return { cache, purge };
+}
+
 let active:
   | {
       namespace: string;
       hosted: boolean;
+      emulated: boolean;
       cache: ReturnType<typeof createPublicSnapshotCache>;
     }
   | undefined;
 function sharedCache() {
   const namespace = publicCacheNamespace();
   const hosted = process.env.VERCEL === "1";
-  if (!active || active.namespace !== namespace || active.hosted !== hosted) {
+  const emulated = localPublicCacheEnabled();
+  if (
+    !active ||
+    active.namespace !== namespace ||
+    active.hosted !== hosted ||
+    active.emulated !== emulated
+  ) {
     active = {
       namespace,
       hosted,
+      emulated,
       cache: createPublicSnapshotCache({
         key: `${namespace}:snapshot`,
         tag: namespace,
@@ -196,7 +249,9 @@ function sharedCache() {
               purge: (tag: string) =>
                 dangerouslyDeleteByTag(tag, { revalidationDeadlineSeconds: 0 }),
             }
-          : {}),
+          : emulated
+            ? createLocalPublicCacheAdapter()
+            : {}),
       }),
     };
   }
