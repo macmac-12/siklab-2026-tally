@@ -21,12 +21,26 @@ type CacheOptions = {
   now?: () => number;
   warn?: (message: string) => void;
   retryDelay?: () => Promise<void>;
+  timeoutMs?: number;
 };
+
+function withCacheDeadline<T>(operation: Promise<T>, milliseconds: number) {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Public cache deadline exceeded.")),
+      milliseconds,
+    );
+  });
+  // Promise.race also handles a late rejection from the original SDK operation.
+  return Promise.race([operation, deadline]).finally(() => clearTimeout(timer));
+}
 
 /** The shared snapshot and every CDN variant spend the same freshness budget. */
 export function createPublicSnapshotCache(options: CacheOptions) {
   const now = options.now || Date.now;
   const warn = options.warn || console.warn;
+  const timeoutMs = options.timeoutMs ?? 750;
   let generation = 0;
   let pending:
     | { generation: number; promise: Promise<FreshPublicSnapshot<unknown>> }
@@ -42,9 +56,10 @@ export function createPublicSnapshotCache(options: CacheOptions) {
       let cacheAvailable = !!options.cache;
       if (options.cache) {
         try {
-          const packed = (await options.cache.get(options.key)) as
-            | PackedSnapshot
-            | undefined;
+          const packed = (await withCacheDeadline(
+            options.cache.get(options.key),
+            timeoutMs,
+          )) as PackedSnapshot | undefined;
           if (startedGeneration !== generation) return read(load);
           if (
             packed?.format === 1 &&
@@ -73,14 +88,17 @@ export function createPublicSnapshotCache(options: CacheOptions) {
       const ttl = Math.floor((freshUntil - now()) / 1000);
       if (cacheAvailable && options.cache && ttl > 0) {
         try {
-          await options.cache.set(
-            options.key,
-            {
-              format: 1,
-              freshUntil,
-              gzip: gzipSync(JSON.stringify(data)).toString("base64"),
-            } satisfies PackedSnapshot,
-            { ttl, tags: [options.tag] },
+          await withCacheDeadline(
+            options.cache.set(
+              options.key,
+              {
+                format: 1,
+                freshUntil,
+                gzip: gzipSync(JSON.stringify(data)).toString("base64"),
+              } satisfies PackedSnapshot,
+              { ttl, tags: [options.tag] },
+            ),
+            timeoutMs,
           );
           if (startedGeneration !== generation) {
             // A publish may have completed while this older cache write was in flight.
@@ -111,7 +129,7 @@ export function createPublicSnapshotCache(options: CacheOptions) {
     // A cache outage must never turn a committed, acknowledged write into a failure.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await options.purge(options.tag);
+        await withCacheDeadline(options.purge(options.tag), timeoutMs);
         return;
       } catch {
         if (!attempt)

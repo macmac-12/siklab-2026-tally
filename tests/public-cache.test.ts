@@ -166,6 +166,47 @@ test("database failures are not cached and concurrent misses share one in-flight
   assert.equal(loads, 1);
 });
 
+test("hung runtime cache calls fall back or acknowledge within the deadline, including late rejection", async () => {
+  const f = fixture();
+  const never = () => new Promise<never>(() => {});
+  let rejectRead!: (reason: Error) => void;
+  const lateRead = new Promise<unknown>((_resolve, reject) => {
+    rejectRead = reject;
+  });
+  const readCache = createPublicSnapshotCache({
+    ...f.options,
+    timeoutMs: 10,
+    cache: { get: () => lateRead, set: never },
+  });
+  assert.equal(
+    (await readCache.read(async () => "fresh database value")).data,
+    "fresh database value",
+  );
+  rejectRead(new Error("SDK rejected after its caller timed out"));
+  await new Promise((resolve) => setImmediate(resolve));
+  const writeCache = createPublicSnapshotCache({
+    ...f.options,
+    timeoutMs: 10,
+    cache: { get: async () => null, set: never },
+  });
+  assert.equal(
+    (await writeCache.read(async () => "fresh despite hung write")).data,
+    "fresh despite hung write",
+  );
+  let purgeAttempts = 0;
+  const purgeCache = createPublicSnapshotCache({
+    ...f.options,
+    timeoutMs: 10,
+    purge: () => {
+      purgeAttempts++;
+      return never();
+    },
+  });
+  await assert.doesNotReject(purgeCache.invalidate());
+  assert.equal(purgeAttempts, 2);
+  assert.equal(f.warnings.length, 3);
+});
+
 test("publication purge reaches another instance; purge outage never rejects an acknowledged write", async () => {
   const f = fixture();
   const first = createPublicSnapshotCache(f.options),
@@ -193,19 +234,24 @@ test("in-flight reads from before a local commit cannot overwrite the new snapsh
   const f = fixture();
   const cache = createPublicSnapshotCache(f.options);
   let release!: () => void;
+  let began!: () => void;
   const waiting = new Promise<void>((resolve) => {
     release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
   });
   let calls = 0;
   const load = async () => {
     if (++calls === 1) {
+      began();
       await waiting;
       return "old";
     }
     return "new";
   };
   const pending = cache.read(load);
-  await Promise.resolve();
+  await started;
   await cache.invalidate();
   release();
   assert.equal((await pending).data, "new");

@@ -45,6 +45,8 @@ def code(source):
 
 
 def check(name, source):
+    if os.environ.get('RECOVERY_UI_CHECK') and not re.search(os.environ['RECOVERY_UI_CHECK'], name):
+        return
     evidence = code(source)
     checks.append({'name': name, 'pass': True, 'evidence': evidence})
     print('PASS', name, flush=True)
@@ -138,7 +140,7 @@ try:
       return {expiredDisabled:true};
     ''')
     check('recovery preview fits phone and both themes', '''
-      const layouts=[];for(const theme of ['dark','light']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});const actual=await page.evaluate(()=>document.documentElement.scrollWidth);if(actual>width)throw Error('Recovery panel overflows '+width);layouts.push({theme,width,actual});}
+      const layouts=[];for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme){await page.locator('.theme-toggle').click();await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);}for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});const actual=await page.evaluate(()=>document.documentElement.scrollWidth);if(actual>width)throw Error('Recovery panel overflows '+width);layouts.push({theme,width,actual});}
       await page.setViewportSize({width:375,height:900});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`output/playwright/recovery-ui-${theme}-phone.png`,fullPage:true});
       await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`output/playwright/recovery-ui-${theme}-desktop.png`,fullPage:true});}return layouts;
     ''')
@@ -154,19 +156,21 @@ try:
       let reads=0;const cookieHeaders=[];
       await page.context().addCookies([{url:new URL(page.url()).origin,name:'siklab_session',value:'ui-public-cookie-probe',httpOnly:true,sameSite:'Lax'}]);
       await page.route('**/api/public/**',route=>{reads++;cookieHeaders.push(!!route.request().headers()['cookie']);return route.continue();});
+      await page.addInitScript(()=>{Math.random=()=>0.5;});
       await page.clock.install();await page.goto('/');await page.getByRole('heading',{name:'College standings',exact:true}).waitFor();
       await page.getByRole('button',{name:'Refresh event information',exact:true}).waitFor();
       await page.getByText('Auto-refresh every 5 minutes',{exact:true}).waitFor();
+      const idle=()=>page.waitForFunction(()=>!document.querySelector('button[aria-label="Refresh event information"]').disabled);await idle();
       const initial=reads;await page.clock.runFor(270000);if(reads!==initial)throw Error('Public polling ran before the five-minute jitter window');
       const automatic=page.waitForResponse(response=>response.url().includes('/api/public/'));
-      await page.clock.runFor(60000);await automatic;if(reads!==initial+1)throw Error('Expected one automatic refresh');
+      await page.clock.runFor(30000);await automatic.catch(()=>{throw Error('Automatic refresh response missing; observed reads='+reads);});await idle();if(reads!==initial+1)throw Error('Expected one automatic refresh');
       await page.evaluate(()=>Object.defineProperty(document,'hidden',{configurable:true,value:true}));
       const beforeHidden=reads;await page.clock.runFor(330000);if(reads!==beforeHidden)throw Error('Hidden tab polled');
       const visible=page.waitForResponse(response=>response.url().includes('/api/public/'));
-      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});await visible;
+      await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});await visible.catch(()=>{throw Error('Visibility refresh response missing; observed reads='+reads);});await idle();
       await page.getByRole('button',{name:'Refresh event information',exact:true}).waitFor({state:'visible'});
       const manual=page.waitForResponse(response=>response.url().includes('/api/public/'));
-      await page.getByRole('button',{name:'Refresh event information',exact:true}).click();await manual;
+      await page.getByRole('button',{name:'Refresh event information',exact:true}).click();await manual.catch(()=>{throw Error('Manual refresh response missing; observed reads='+reads);});await idle();
       if(cookieHeaders.some(Boolean))throw Error('Staff cookie reached public data fetch');
       if(reads!==initial+3)throw Error('Unexpected public request count');
       await page.screenshot({path:'output/playwright/public-five-minute-refresh.png',fullPage:true});
@@ -177,7 +181,7 @@ except Exception as error:
     print('FAIL', str(error), flush=True)
 finally:
     Path('output/verification/recovery-ui.json').write_text(json.dumps({'url': base,
-        'scope': 'UI acceptance; Storage and destructive maintenance responses mocked' + ('; auth/staff state mocked' if mock_auth else ''),
+        'scope': 'UI acceptance; Storage and destructive maintenance responses mocked' + ('; auth/staff state mocked' if mock_auth else '') + ('; filtered checks' if os.environ.get('RECOVERY_UI_CHECK') else ''),
         'checks': checks, 'passed': sum(item['pass'] for item in checks), 'total': len(checks)}, indent=2) + '\n')
     try:
         call('close')
