@@ -112,6 +112,7 @@ async function staff(user, i) {
         s.version++;
         s.status = schedule.status;
         s.title = `Rehearsal ${i + 1} · update ${tick}`;
+        await req("staff/state", {cookie: user.cookie, kind: "private"});
       }
     } else if (!queue.some((q) => q.scheduleId === s.id)) {
       const scoreA = s.categoryId.startsWith("chess") ? 1 : Math.max(2, tick),
@@ -143,6 +144,7 @@ async function staff(user, i) {
       if (r) {
         acknowledged.push(key);
         queue.push({ id: r.data.id, scheduleId: s.id });
+        await req("staff/state", {cookie: user.cookie, kind: "private"});
       }
     }
     tick++;
@@ -170,6 +172,7 @@ async function reviewer(user) {
         const s = scheduleMap.get(item.scheduleId);
         s.publishedId = item.id;
         s.status = "completed";
+        await req("staff/state", {cookie: user.cookie, kind: "private"});
       }
     } else await sleep(500);
   }
@@ -241,7 +244,7 @@ const report = {
   viewers: viewerCount,
   staff: 20,
   workload:
-    `${pollMs / 1000}s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results; logins warmed before timing. Local only; no hosted-capacity claim.`,
+    `${pollMs / 1000}s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results. Every successful write reloads the uncached staff workspace, matching the UI. Logins warmed before timing. Local only; no hosted-capacity claim.`,
   summary,
   errorRate: failed / total,
   acknowledgedWrites: acknowledged.length,
@@ -254,6 +257,7 @@ const report = {
 report.pass =
   summary.public.p95Ms < 1000 &&
   summary.write.p95Ms < 2000 &&
+  summary.private.p95Ms < 2000 &&
   report.errorRate < 0.01 &&
   report.lostAcknowledgedWrites === 0;
 await writeFile(

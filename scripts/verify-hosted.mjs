@@ -109,12 +109,36 @@ function largeBackup(source, actorId, targetBytes = 6_000_000) {
 async function raw(label, url, options = {}) {
   const began = performance.now();
   const bytes = options.body ? Buffer.byteLength(options.body) : 0;
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(120_000),
-    redirect: "error",
-  });
-  const text = await response.text();
+  const readOnly = !options.method || options.method === "GET";
+  let response, text;
+  for (let attempt = 0; attempt < (readOnly ? 2 : 1); attempt++) {
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(120_000),
+        redirect: "error",
+      });
+      text = await response.text();
+      break;
+    } catch (error) {
+      const code = error.cause?.code;
+      report.requests.push({
+        operation: label,
+        status: "network-error",
+        ms: Math.round(performance.now() - began),
+        sentBytes: bytes,
+        networkCode:
+          typeof code === "string" && /^[A-Z0-9_]+$/.test(code)
+            ? code
+            : "unavailable",
+      });
+      if (!readOnly || attempt === 1)
+        throw new Error(
+          `Network request failed during ${label}. Mutations are never retried automatically.`,
+        );
+      await delay(200);
+    }
+  }
   let data;
   try {
     data = JSON.parse(text);
@@ -1010,6 +1034,20 @@ if (process.argv.includes("--help")) {
           .map((row) => row.sentBytes),
       ),
     };
+    try {
+      const previous = JSON.parse(
+        await readFile(`${output}/hosted-verification.json`, "utf8"),
+      );
+      const stamp = new Date(previous.startedAt)
+        .toISOString()
+        .replace(/[:.]/g, "-");
+      await privateJson(`${output}/hosted-attempt-${stamp}.json`, previous);
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        throw new Error(
+          "Previous hosted report could not be archived; preserve it before retrying.",
+        );
+    }
     await privateJson(`${output}/hosted-verification.json`, report);
     console.log(`Verification report: ${output}/hosted-verification.json`);
   }

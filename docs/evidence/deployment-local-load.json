@@ -1,0 +1,49 @@
+{
+  "time": "2026-11-21T18:53:55.081Z",
+  "durationSeconds": 600,
+  "production": true,
+  "hosted": false,
+  "cdn": false,
+  "sharedCache": "Single-process emulation of the deployed shared-cache TTL/invalidation contract",
+  "fixtureSchedules": 423,
+  "host": {
+    "cpu": "Intel(R) Core(TM) i7-6500U CPU @ 2.50GHz",
+    "logicalCpus": 4,
+    "totalMemoryMiB": 7811,
+    "node": "v26.13.0"
+  },
+  "maxServerRssMiB": 454,
+  "viewers": 1000,
+  "staff": 20,
+  "workload": "300s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results. Every successful write reloads the uncached staff workspace, matching the UI. Logins warmed before timing. Local only; no hosted-capacity claim.",
+  "summary": {
+    "public": {
+      "requests": 2002,
+      "successes": 2002,
+      "failures": 0,
+      "p95Ms": 71,
+      "maxMs": 753
+    },
+    "write": {
+      "requests": 1782,
+      "successes": 1782,
+      "failures": 0,
+      "p95Ms": 211,
+      "maxMs": 2153
+    },
+    "private": {
+      "requests": 1782,
+      "successes": 1782,
+      "failures": 0,
+      "p95Ms": 164,
+      "maxMs": 1907
+    }
+  },
+  "errorRate": 0,
+  "acknowledgedWrites": 1782,
+  "persistedAcknowledgements": 1782,
+  "lostAcknowledgedWrites": 0,
+  "maxDatabaseConnections": 11,
+  "failures": [],
+  "pass": true
+}

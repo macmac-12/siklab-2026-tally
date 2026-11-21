@@ -16,12 +16,17 @@ def call(*args):
  return r.stdout
 def code(source):
  out=call('run-code','async(page)=>{'+source+'}')
- match=re.search(r'### Result\n(.*?)\n###',out,re.S)
- if not match: raise RuntimeError('Browser command did not return structured evidence')
+ match=re.search(r'### Result\n(.*?)(?:\n###|\Z)',out,re.S)
+ if not match:
+  Path('output/verification/broadcast-last-cli.txt').write_text(out.replace(fixture['password'],'[redacted]'))
+  raise RuntimeError('Browser command did not return structured evidence: '+out[-2000:].replace(fixture['password'],'[redacted]'))
  return json.loads(match.group(1))
 checks=[]
+if os.environ.get('BROADCAST_RESUME')=='1' and Path('output/verification/broadcast-browser.json').exists():
+ checks=[item for item in json.loads(Path('output/verification/broadcast-browser.json').read_text())['checks'] if item['pass']]
 opened=False
 def check(name,source):
+ if any(item['name']==name for item in checks): return
  result=code(source);checks.append({'name':name,'pass':True,'evidence':result});print('PASS',name,flush=True)
 try:
  call('open',base,'--config=output/playwright/broadcast.config.json')
@@ -164,9 +169,9 @@ try:
  ''')
  check('staff form publishes through to student display', '''
  await page.goto('/staff');await page.getByRole('button',{name:'Schedules',exact:true}).click();await page.getByRole('combobox',{name:'Event category',exact:true}).selectOption('basketball-men');await page.getByRole('button',{name:'Arrange tournament bracket',exact:true}).click();
- await page.getByRole('dialog').waitFor();await page.getByRole('textbox',{name:'Bracket name',exact:true}).fill('Rehearsal published championship');await page.getByRole('button',{name:'Preview bracket',exact:true}).click();await page.getByRole('dialog').locator('.bracket-match').first().waitFor();
+ await page.getByRole('dialog').waitFor();const publishedTitle='Rehearsal published championship '+Date.now();await page.getByRole('textbox',{name:'Bracket name',exact:true}).fill(publishedTitle);await page.getByRole('button',{name:'Preview bracket',exact:true}).click();await page.getByRole('dialog').locator('.bracket-match').first().waitFor();
  for(const width of [375,768,1440]){await page.setViewportSize({width,height:1000});await page.getByRole('dialog').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`output/playwright/broadcast-editor-${width}.png`});await page.getByRole('dialog').evaluate(el=>el.scrollTop=el.scrollHeight);await page.screenshot({path:`output/playwright/broadcast-editor-preview-${width}.png`});if(await page.getByRole('dialog').evaluate(el=>el.scrollWidth>el.clientWidth))throw Error('Editor overflow');}
- await page.getByRole('button',{name:'Close',exact:true}).click();await page.getByRole('button',{name:'Keep editing',exact:true}).click();if(await page.getByRole('textbox',{name:'Bracket name',exact:true}).inputValue()!=='Rehearsal published championship')throw Error('Unsaved draft lost');await page.getByRole('button',{name:'Publish bracket',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});await page.goto('/schedules?category=basketball-men&mode=bracket');await page.getByRole('heading',{name:'Rehearsal published championship',exact:true}).waitFor();return {publishedFromEditor:true,publicVisible:true};
+ await page.getByRole('button',{name:'Close',exact:true}).click();await page.getByRole('button',{name:'Keep editing',exact:true}).click();if(await page.getByRole('textbox',{name:'Bracket name',exact:true}).inputValue()!==publishedTitle)throw Error('Unsaved draft lost');await page.getByRole('button',{name:'Publish bracket',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});await page.goto('/schedules?category=basketball-men&mode=bracket');await page.getByRole('heading',{name:publishedTitle,exact:true}).waitFor();return {publishedFromEditor:true,publicVisible:true,publishedTitle};
  ''')
 except Exception as error:
  checks.append({'name':'Browser acceptance interrupted','pass':False,'error':str(error).replace(fixture['password'],'[redacted]')})

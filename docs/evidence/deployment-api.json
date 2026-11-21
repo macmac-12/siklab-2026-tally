@@ -1,0 +1,63 @@
+{
+  "time": "2026-11-21T18:55:34.514Z",
+  "checks": [
+    {
+      "name": "guest staff API denied",
+      "pass": true
+    },
+    {
+      "name": "legacy endpoints retired",
+      "pass": true
+    },
+    {
+      "name": "homepage contains no staff/login controls",
+      "pass": true
+    },
+    {
+      "name": "public JSON excludes private revision and account fields",
+      "pass": true
+    },
+    {
+      "name": "cross-origin mutation denied",
+      "pass": true
+    },
+    {
+      "name": "missing idempotency key rejected",
+      "pass": true
+    },
+    {
+      "name": "staff cannot review or manage accounts",
+      "pass": true
+    },
+    {
+      "name": "unassigned event entry blocked",
+      "pass": true
+    },
+    {
+      "name": "malformed JSON and unknown fields rejected",
+      "pass": true
+    },
+    {
+      "name": "public ETag returns 304",
+      "pass": true
+    },
+    {
+      "name": "password reset revokes sessions and requires password change",
+      "pass": true
+    },
+    {
+      "name": "disable immediately revokes access",
+      "pass": true
+    },
+    {
+      "name": "logout revokes server session",
+      "pass": true
+    },
+    {
+      "name": "private backup restricted",
+      "pass": true
+    }
+  ],
+  "passed": 14,
+  "total": 14
+}
