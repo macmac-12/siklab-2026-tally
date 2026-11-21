@@ -292,12 +292,18 @@ await check("private backup restricted", async () => {
   assert.equal((await request("staff/backup")).status, 401);
   assert.equal((await request("staff/backup", { cookie: staff })).status, 403);
   const b = await request("staff/backup", { cookie: admin });
-  assert.equal(b.status, 200);
-  assert(!("sessions" in b.data.tables));
-  assert.equal(b.data.version, 2);
+  if (b.status === 503) {
+    assert.match(b.data.error, /private.*storage|private.*backup/i);
+  } else {
+    assert.equal(b.status, 200);
+    assert.equal(typeof b.data.url, "string");
+    const exported = await (await fetch(b.data.url)).json();
+    assert(!("sessions" in exported.tables));
+    assert.equal(exported.version, 3);
+  }
 });
 await writeFile(
-  "docs/evidence/phase4-api.json",
+  "docs/evidence/deployment-api.json",
   JSON.stringify(
     {
       time: new Date().toISOString(),

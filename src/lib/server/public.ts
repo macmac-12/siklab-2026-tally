@@ -1,14 +1,19 @@
+import { bracketRecords } from "./brackets";
+import { resolveBracket } from "../brackets";
 import {
-  transaction,
-  getPublicCache,
-  setPublicCache,
-  scheduleRow,
-  fail,
-} from "./store";
+  dailyAgenda,
+  collegeSummaries,
+  chronological,
+  matchesFilters,
+  type PublicData,
+  type PublicBracket,
+} from "../public-projections";
+import { transaction, scheduleRow, fail } from "./store";
+import { readPublicSnapshot } from "./cache";
 import type { PublicSnapshot, ResultBody } from "../model";
 import type { Category, Discipline } from "../catalog";
-let pending: Promise<PublicSnapshot> | undefined;
-async function load(): Promise<PublicSnapshot> {
+type Complete = PublicSnapshot & { brackets: PublicBracket[] };
+async function load(): Promise<Complete> {
   return transaction(async (db) => {
     const categories = (
       await db.query("SELECT * FROM categories ORDER BY id")
@@ -71,6 +76,18 @@ async function load(): Promise<PublicSnapshot> {
     }));
     const row = (await db.query("SELECT * FROM system_state")).rows[0];
     return {
+      brackets: (await bracketRecords(db))
+        .filter((b) => b.published)
+        .map((b) => ({
+          id: b.id,
+          publishedAt: b.publishedAt!,
+          bracket: b.published!,
+          resolved: resolveBracket(b.published!, {
+            entries,
+            schedules,
+            results,
+          }),
+        })),
       categories,
       disciplines,
       entries,
@@ -82,16 +99,19 @@ async function load(): Promise<PublicSnapshot> {
     };
   });
 }
-export async function publicState(params: URLSearchParams) {
-  let state = getPublicCache<PublicSnapshot>();
-  if (!state) {
-    if (!pending)
-      pending = load().finally(() => {
-        pending = undefined;
-      });
-    state = await pending;
-    setPublicCache(state);
-  }
+export async function publicState(
+  params: URLSearchParams,
+): Promise<PublicData> {
+  return (await publicStateWithFreshness(params)).data;
+}
+export async function publicStateWithFreshness(params: URLSearchParams) {
+  const { data: state, freshUntil } = await readPublicSnapshot(load);
+  return { data: projectPublicState(state, params), freshUntil };
+}
+function projectPublicState(
+  state: Complete,
+  params: URLSearchParams,
+): PublicData {
   const page = Number(params.get("page") || 1),
     limit = Number(params.get("limit") || 100);
   if (
@@ -102,58 +122,72 @@ export async function publicState(params: URLSearchParams) {
     limit > 100
   )
     fail("Invalid pagination.");
-  const college = params.get("college") || "",
-    category = params.get("category") || "",
-    date = params.get("date") || "",
-    venue = params.get("venue") || "",
-    status = params.get("status") || "";
-  const matches = state.schedules.filter(
+  const view = params.get("view"),
+    category = params.get("category") || "";
+  const agenda = dailyAgenda(state, params.get("college") || "");
+  const collegeResults = collegeSummaries(state);
+  let matches = chronological(state.schedules).filter(
     (s) =>
-      (params.get("view") !== "results" || !!s.publishedId) &&
-      (!category || s.categoryId === category) &&
-      (!date || s.date === date) &&
-      (!venue || s.venue === venue) &&
-      (!status || s.status === status) &&
-      (!college ||
-        s.entryIds.some((id) =>
-          state!.entries.some((e) => e.id === id && e.collegeId === college),
-        )),
+      matchesFilters(s, state!, params) &&
+      (view !== "results" || !!s.publishedId),
   );
-  if (params.get("view") === "overview") {
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Manila",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    const priority = (s: (typeof matches)[number]) =>
-      s.status === "ongoing"
-        ? 0
-        : s.date >= today && ["upcoming", "postponed"].includes(s.status)
-          ? 1
-          : 2;
-    matches.sort(
-      (a, b) =>
-        priority(a) - priority(b) ||
-        a.date.localeCompare(b.date) ||
-        (a.startsAt || "z").localeCompare(b.startsAt || "z") ||
-        a.id.localeCompare(b.id),
-    );
-  }
-  const schedules = matches.slice((page - 1) * limit, page * limit),
-    ids = new Set(schedules.map((s) => s.id));
+  if (view === "results")
+    matches.sort((a, b) => {
+      const published = (id: string) =>
+        state!.results.find((r) => r.scheduleId === id)?.publishedAt || "";
+      return (
+        published(b.id).localeCompare(published(a.id)) ||
+        a.id.localeCompare(b.id)
+      );
+    });
+  const brackets = state.brackets.filter(
+    (b) => b.bracket.categoryId === category,
+  );
+  const summaryIds = new Set(collegeResults.flatMap((c) => c.resultIds));
+  const summarySchedules = state.schedules.filter((s) =>
+    state!.results.some((r) => r.scheduleId === s.id && summaryIds.has(r.id)),
+  );
+  const effectiveLimit = view === "results" ? 20 : limit;
+  const effectivePage = Math.min(
+    page,
+    Math.max(1, Math.ceil(matches.length / effectiveLimit)),
+  );
+  const schedules =
+    view === "overview"
+      ? agenda.schedules
+      : view === "results" && !params.get("college")
+        ? summarySchedules
+        : matches.slice(
+            (effectivePage - 1) * effectiveLimit,
+            effectivePage * effectiveLimit,
+          );
+  const linked = state.schedules.filter((s) =>
+    brackets.some((b) => b.bracket.nodes.some((n) => n.fixtureId === s.id)),
+  );
+  const ids = new Set([...schedules, ...linked].map((s) => s.id));
+  const summaryCategorySchedules = state.schedules.filter(
+    (s) =>
+      (!category || s.categoryId === category) &&
+      (s.table !== "none" || s.isFinal),
+  );
+  const summaryCategoryIds = new Set(summaryCategorySchedules.map((s) => s.id));
   return {
     ...state,
-    entries: state.entries.filter(
-      (e) =>
-        schedules.some((s) => s.entryIds.includes(e.id)) ||
-        state.awards.some((a) => a.body.rows.some((r) => r.entryId === e.id)),
-    ),
-    schedules,
+    brackets,
+    schedules: view === "brackets" && brackets.length ? linked : schedules,
     results: state.results.filter((r) => ids.has(r.scheduleId)),
-    total: matches.length,
-    page,
-    limit,
+    total: view === "overview" ? agenda.schedules.length : matches.length,
+    page: effectivePage,
+    limit: effectiveLimit,
     venues: [...new Set(state.schedules.map((s) => s.venue))].sort(),
+    agendaDate: agenda.date,
+    today: agenda.today,
+    collegeResults,
+    summaries: {
+      schedules: summaryCategorySchedules,
+      results: state.results.filter((r) =>
+        summaryCategoryIds.has(r.scheduleId),
+      ),
+    },
   };
 }

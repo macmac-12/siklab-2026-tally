@@ -2,7 +2,7 @@
 
 ## Runtime
 
-Next.js App Router serves public pages, a separate staff bundle, and Node route handlers. PostgreSQL 18 stores durable records. `pg` uses a process-wide bounded pool (12 connections); database sessions are short lived. No cloud service is provisioned. No JSON fallback or Supabase whole-state record remains.
+Next.js App Router serves public pages, a separate staff bundle, and Node route handlers. PostgreSQL stores durable records (local PostgreSQL 18; hosted Supabase PostgreSQL 17). `pg` uses a module-scoped bounded pool: one connection per Vercel instance through the Supabase transaction pooler with verified TLS, and up to 12 for local development. Supabase Storage holds private backups. No JSON fallback or whole-state record remains.
 
 Versioned SQL migrations run explicitly during setup, never on ordinary page reads. Bootstrap/import runs only when there are no accounts. Configuration failure is explicit.
 
@@ -28,17 +28,30 @@ Read snapshots use repeatable-read transactions. Result correction impacts are c
 - `POST /api/auth/login`, `/logout`, `/password`; `GET /api/auth/me`: staff authentication only.
 - `GET /api/staff/state`: current authorized workspace. Officers see only assigned categories and no account/audit administration.
 - `POST /api/staff/command`: validated schedule, entry, result, award, review, account and rule commands; requires an `Idempotency-Key`.
-- `GET /api/staff/backup`, `POST /api/staff/restore`: superadministrator-only version-2 backup export and validated preview/restore.
+- `GET /api/staff/backup`, `POST /api/staff/restore`: superadministrator-only version-3 backup export (version-2 restores remain accepted) and validated preview/restore.
 - Legacy unscoped endpoints return 410 and cannot expose old private state.
 
 Mutation requests require a matching Origin and JSON content type. Sessions expire after eight hours, are HttpOnly/SameSite=Lax, and are revoked on logout/reset/disable. Login attempts are bounded per normalized account email. Enable secure cookies for later HTTPS hosting.
 
-The public projection has a four-second process cache invalidated after committed writes, plus ETags. Visible pages poll one endpoint every 20 seconds; hidden tabs stop polling. A successful 304 advances the checked time. Errors preserve the previous successful dataset and display a warning. There is no public auth polling or “LIVE” claim.
+The approved public projection uses compressed Vercel Runtime Cache and filtered CDN responses sharing one absolute 15-second freshness deadline, plus ETags. Public-changing commits hard-purge both layers; private drafts and account edits do not. All staff/auth/error responses are private and uncached. Visible pages poll one endpoint every five minutes with jitter and offer manual refresh; hidden tabs stop polling. A successful 304 advances the checked time. Errors preserve the previous successful dataset and display a warning. There is no public auth polling or “LIVE” claim.
 
 ## Compatibility and limits
 
 `/scoreboard` redirects to `/standings`. Public pages remain public even when a staff cookie is present. `/staff/login` and `/staff` are shared directly with staff and are excluded from search indexing metadata.
 
-Existing empty-installation accounts migrate with IDs/hashes preserved; nonempty legacy competition data stops migration for explicit reconciliation. Backups are schema version 2, not compatible with the old loosely validated JSON import. Original audit artifacts and source references remain in Git history.
+Existing empty-installation accounts migrate with IDs/hashes preserved; nonempty legacy competition data stops migration for explicit reconciliation. Backups are schema version 3 with brackets (version 2 restores contain no brackets), not compatible with the old loosely validated JSON import. Original audit artifacts and source references remain in Git history.
 
 Automatic tournament brackets, full athlete registration, judges' scoring sheets, offline writes and external notifications are intentionally absent. Fixed intervals support conflict detection; unknown durations and unscheduled athlete overlaps cannot be inferred. Staff enter committee-certified final standings for direct-award events. The software does not resolve ambiguous official rules by guessing.
+
+
+## Published tournament paths and public projections
+
+Migration `002_brackets.sql` adds separate versioned bracket records. JSON graphs contain ordered lanes/rounds, two-slot nodes and optional fixture links; succession scheduling links keep their original meaning. `bracket.save` reuses event access, transactional idempotency, optimistic version checks and audit history. Draft and published graphs are separate. Public resolution uses approved fixture results and explicit published byes. Invalidated paths are derived at read time and stop advancement without editing confirmed fixtures.
+
+`public-projections.ts` owns Manila-day selection, chronological succession ordering and newest-publication college summaries. `/api/public/daily-agenda`, `/api/public/college-results`, and `/api/public/brackets?category=…` expose typed projections from the complete approved snapshot. Agenda/history retain pagination (20 results per history page). Bracket filters are presentation highlights, not graph pruning. Secondary tournament/sub-point summaries have complete category data independent of the current page.
+
+## Hosted recovery and release
+
+Private signed Storage transfers keep 25 MB backups outside Function payload limits. Server-side maintenance previews bind owner, checksum, database revision and 15-minute expiry. Restore/reset require current password and explicit confirmation, verify a persistent safety snapshot before destructive SQL, then revoke sessions and purge public caches. Reset clears competition records/history while retaining staff, assignments, entries and configured rules. Ten safety copies are retained; a daily authenticated cron prunes temporary objects older than 24 hours. Application tables have RLS and no browser-role grants.
+
+Production is a separate Vercel Hobby project deployed manually from the pushed `codex/deploy-vercel-supabase` commit. See [Deployment guide](DEPLOYMENT.md).

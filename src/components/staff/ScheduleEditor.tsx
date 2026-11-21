@@ -1,9 +1,12 @@
 "use client";
+import StaffForm from "./StaffForm";
 import { useState } from "react";
 import type { StaffSnapshot, Schedule } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import { todayManila } from "../shared/format";
 import type { Run } from "./client";
+import { displayCode, displayEntryLabel } from "@/lib/branding";
+import { CollegeCrest } from "../shared/CollegeIdentity";
 function localTime(iso: string | null) {
   return iso
     ? new Date(Date.parse(iso) + 8 * 3600000).toISOString().slice(11, 16)
@@ -53,7 +56,7 @@ export default function ScheduleEditor({
           Close
         </button>
       </div>
-      <form
+      <StaffForm
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget),
@@ -213,8 +216,13 @@ export default function ScheduleEditor({
                     )
                   }
                 />
-                {en.label}
-                {en.label !== en.collegeId ? ` · ${en.collegeId}` : ""}
+                <CollegeCrest id={en.collegeId} size={28} />
+                <span>
+                  {displayEntryLabel(en)}
+                  {en.label !== en.collegeId
+                    ? ` · ${displayCode(en.collegeId)}`
+                    : ""}
+                </span>
               </label>
             ))}
           </div>
@@ -329,7 +337,7 @@ export default function ScheduleEditor({
         <button className="primary" disabled={busy}>
           {busy ? "Saving…" : "Save schedule"}
         </button>
-      </form>
+      </StaffForm>
     </section>
   );
 }

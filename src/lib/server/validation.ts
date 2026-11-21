@@ -1,3 +1,4 @@
+import { bracketSchema } from "../brackets";
 import { z } from "zod";
 import { COLLEGE_IDS } from "../catalog";
 const id = z.string().min(1).max(150),
@@ -83,6 +84,15 @@ export const scheduleInput = z
   })
   .strict();
 export const commandSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("bracket.save"),
+      id: id.optional(),
+      version: z.number().int().positive().optional(),
+      bracket: bracketSchema,
+      publish: z.boolean(),
+    })
+    .strict(),
   z
     .object({ action: z.literal("schedule.save"), schedule: scheduleInput })
     .strict(),

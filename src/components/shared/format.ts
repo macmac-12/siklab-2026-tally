@@ -28,16 +28,3 @@ export function download(name: string, content: string, type = "text/csv") {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function csv(rows: (string | number | null)[][]) {
-  return rows
-    .map((row) =>
-      row
-        .map((v) => {
-          let s = String(v ?? "");
-          if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-          return `"${s.replaceAll('"', '""')}"`;
-        })
-        .join(","),
-    )
-    .join("\r\n");
-}

@@ -398,6 +398,184 @@ test("Athletics aggregate, all disciplines resolved and double entrant contribut
   assert.equal(body.rows.find((r) => r.collegeId === "CCS")?.points, 25);
   await approve(a.id);
 });
+test("bracket permissions, publication, stale saves, idempotency and backup v2/v3", async () => {
+  const fixture = await schedule("basketball-men", {
+    startsAt: "2026-11-23T12:00:00Z",
+    endsAt: "2026-11-23T13:00:00Z",
+  });
+  const graph = {
+    categoryId: fixture.categoryId,
+    disciplineId: null,
+    title: "Test bracket",
+    lanes: [{ id: "main", name: "Main" }],
+    rounds: [
+      { id: "first", laneId: "main", name: "First" },
+      { id: "final", laneId: "main", name: "Final" },
+    ],
+    nodes: [
+      {
+        id: "m1",
+        roundId: "first",
+        label: "Match 1",
+        fixtureId: fixture.id,
+        slots: fixture.entryIds.map((entryId) => ({ kind: "entry", entryId })),
+      },
+      {
+        id: "m2",
+        roundId: "final",
+        label: "Final",
+        fixtureId: null,
+        slots: [{ kind: "winner", nodeId: "m1" }, { kind: "bye" }],
+      },
+    ],
+  };
+  await assert.rejects(
+    () =>
+      act(
+        {
+          action: "bracket.save",
+          bracket: { ...graph, categoryId: "volleyball-men" },
+          publish: false,
+        },
+        officer,
+      ),
+    /not assigned/,
+  );
+  const key = randomUUID();
+  const body = { action: "bracket.save", bracket: graph, publish: false };
+  const saved = (await act(body, officer, key)) as { id: string };
+  assert.deepEqual(await act(body, officer, key), saved);
+  assert.equal(
+    (
+      await publicState(
+        new URLSearchParams("view=brackets&category=basketball-men"),
+      )
+    ).brackets.length,
+    0,
+  );
+  await act(
+    {
+      action: "bracket.save",
+      id: saved.id,
+      version: 1,
+      bracket: graph,
+      publish: true,
+    },
+    officer,
+  );
+  const published = await publicState(
+    new URLSearchParams("view=brackets&category=basketball-men"),
+  );
+  assert.equal(published.brackets[0].bracket.nodes.length, 2);
+  assert.equal(published.brackets[0].resolved[1].winner, null);
+  const awardsBefore = JSON.stringify(published.awards);
+  await assert.rejects(
+    () =>
+      act({
+        action: "bracket.save",
+        id: saved.id,
+        version: 1,
+        bracket: graph,
+        publish: true,
+      }),
+    /changed/,
+  );
+  await act({
+    action: "bracket.save",
+    id: saved.id,
+    version: 2,
+    bracket: { ...graph, title: "Unpublished changes" },
+    publish: false,
+  });
+  assert.equal(
+    (
+      await publicState(
+        new URLSearchParams("view=brackets&category=basketball-men"),
+      )
+    ).brackets[0].bracket.title,
+    "Test bracket",
+  );
+  await approve((await submit(fixture)).id);
+  const resolved = await publicState(
+    new URLSearchParams("view=brackets&category=basketball-men"),
+  );
+  assert.equal(resolved.brackets[0].resolved[1].winner, fixture.entryIds[0]);
+  assert.equal(JSON.stringify(resolved.awards), awardsBefore);
+  const backup = await exportBackup(admin);
+  assert.equal(backup.version, 3);
+  assert.equal(backup.tables.brackets.length, 1);
+  await restoreBackup(admin, { backup, preview: true });
+  const legacy = structuredClone(backup);
+  legacy.version = 2;
+  delete legacy.tables.brackets;
+  legacy.checksum = hash(JSON.stringify(legacy.tables));
+  const preview = await restoreBackup(admin, { backup: legacy, preview: true });
+  assert.equal(preview.counts.brackets, 0);
+  const invalid = structuredClone(backup);
+  invalid.tables.brackets[0].draft.nodes[0].fixtureId = "missing";
+  invalid.checksum = hash(JSON.stringify(invalid.tables));
+  await assert.rejects(() =>
+    restoreBackup(admin, { backup: invalid, preview: true }),
+  );
+  assert.equal((await exportBackup(admin)).tables.brackets.length, 1);
+});
+test("public bracket reads include every node and fixture beyond a paginated agenda", async () => {
+  const source = await state(),
+    categoryId = "basketball-women";
+  const entries = [
+    entry(source, categoryId, "CCS"),
+    entry(source, categoryId, "CAS"),
+  ];
+  const fixtures: Schedule[] = Array.from({ length: 125 }, (_, i) => {
+    const startsAt = new Date(Date.UTC(2030, 0, 1, i * 2)).toISOString();
+    return {
+      ...source.schedules[0],
+      id: randomUUID(),
+      categoryId,
+      disciplineId: null,
+      entryIds: entries,
+      publishedId: null,
+      version: 1,
+      status: "upcoming",
+      title: `Projection fixture ${i}`,
+      date: startsAt.slice(0, 10),
+      startsAt,
+      endsAt: new Date(Date.parse(startsAt) + 3600000).toISOString(),
+      followsId: null,
+    };
+  });
+  await transaction(async (db) => {
+    for (const fixture of fixtures)
+      await db.query(
+        "INSERT INTO schedules(id,category_id,data) VALUES($1,$2,$3)",
+        [fixture.id, categoryId, fixture],
+      );
+  }, true);
+  const bracket = {
+    categoryId,
+    disciplineId: null,
+    title: "Complete large bracket",
+    lanes: [{ id: "main", name: "Main" }],
+    rounds: [{ id: "round", laneId: "main", name: "Round" }],
+    nodes: fixtures.map((s, i) => ({
+      id: `node-${i}`,
+      roundId: "round",
+      label: `Match ${i}`,
+      fixtureId: s.id,
+      slots: s.entryIds.map((entryId) => ({ kind: "entry", entryId })),
+    })),
+  };
+  await act({ action: "bracket.save", bracket, publish: true });
+  const agenda = await publicState(
+    new URLSearchParams(`view=schedules&category=${categoryId}`),
+  );
+  assert.equal(agenda.schedules.length, 100);
+  const complete = await publicState(
+    new URLSearchParams(`view=brackets&category=${categoryId}&college=BUHI`),
+  );
+  assert.equal(complete.schedules.length, 125);
+  assert.equal(complete.brackets[0].bracket.nodes.length, 125);
+});
 test("disabled staff loses access and rule history persists", async () => {
   await act({
     action: "account.save",

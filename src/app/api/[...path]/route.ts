@@ -10,31 +10,55 @@ import {
   changePassword,
 } from "@/lib/server/authentication";
 import { loginSchema, passwordSchema } from "@/lib/server/validation";
-import { publicState } from "@/lib/server/public";
+import { publicStateWithFreshness } from "@/lib/server/public";
+import { publicCacheHeaders } from "@/lib/server/cache";
 import { command, staffState } from "@/lib/server/actions";
-import { exportBackup, restoreBackup } from "@/lib/server/backup";
+import { createBackupDownload, createBackupUpload, restoreStoredBackup, resetCompetitionData, cleanupMaintenance } from "@/lib/server/maintenance";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 async function handle(request: Request) {
   try {
     const url = new URL(request.url),
       path = url.pathname.replace(/^\/api\//, ""),
       method = request.method;
+    if (path === "internal/backup-cleanup" && method === "GET") {
+      if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`)
+        throw new AppError(401, "Unauthorized.");
+      await cleanupMaintenance();
+      return NextResponse.json({ok:true});
+    }
     if (
       method === "GET" &&
       [
         "public/overview",
+        "public/brackets",
+        "public/daily-agenda",
+        "public/college-results",
         "public/schedules",
         "public/results",
         "public/standings",
       ].includes(path)
     ) {
-      const state = await publicState(url.searchParams),
-        body = JSON.stringify(state),
+      if (!url.searchParams.has("view"))
+        url.searchParams.set(
+          "view",
+          (
+            {
+              "public/daily-agenda": "overview",
+              "public/college-results": "results",
+              "public/brackets": "brackets",
+              "public/schedules": "schedules",
+              "public/results": "results",
+            } as Record<string, string>
+          )[path] || "default",
+        );
+      const {data, freshUntil} = await publicStateWithFreshness(url.searchParams),
+        body = JSON.stringify(data),
         etag = `"${hash(body).slice(0, 24)}"`;
       const headers = {
         ETag: etag,
-        "Cache-Control": "public, max-age=0, must-revalidate",
+        ...publicCacheHeaders(freshUntil),
         Vary: "Accept-Encoding",
       };
       if (request.headers.get("if-none-match") === etag)
@@ -91,16 +115,15 @@ async function handle(request: Request) {
         ),
       );
     if (path === "staff/backup" && method === "GET")
-      return NextResponse.json(await exportBackup(user), {
-        headers: {
-          "Cache-Control": "no-store",
-          "Content-Disposition": 'attachment; filename="siklab-backup.json"',
-        },
-      });
+      return NextResponse.json(await createBackupDownload(user));
+    if (path === "staff/backup-upload" && method === "POST")
+      return NextResponse.json(await createBackupUpload(user));
     if (path === "staff/restore" && method === "POST")
       return NextResponse.json(
-        await restoreBackup(user, await readJson(request, 25_000_000)),
+        await restoreStoredBackup(user, await readJson(request)),
       );
+    if (path === "staff/reset" && method === "POST")
+      return NextResponse.json(await resetCompetitionData(user, await readJson(request)));
     return NextResponse.json({ error: "Endpoint not found." }, { status: 404 });
   } catch (error) {
     if (error instanceof ZodError)
@@ -149,8 +172,16 @@ async function handle(request: Request) {
     );
   }
 }
-export const GET = handle;
-export const POST = handle;
-export const PUT = handle;
-export const PATCH = handle;
-export const DELETE = handle;
+async function respond(request: Request) {
+  const response = await handle(request);
+  if (!response.headers.has("Vercel-Cache-Tag")) {
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("Vercel-CDN-Cache-Control", "no-store");
+  }
+  return response;
+}
+export const GET = respond;
+export const POST = respond;
+export const PUT = respond;
+export const PATCH = respond;
+export const DELETE = respond;

@@ -1,10 +1,10 @@
+import { bracketSchema, validateBracket } from "../brackets";
+import { bracketRecords, bracketContext } from "./brackets";
 import { z } from "zod";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import bcrypt from "bcryptjs";
+import { saveSafetyBackup } from "./storage";
 import {
   transaction,
-  requireAdmin,
   fail,
   hash,
   audit,
@@ -32,6 +32,7 @@ const TABLES = [
   "revisions",
   "awards",
   "audit",
+  "brackets",
 ] as const;
 const text = z.string().max(10000),
   id = z.string().min(1).max(150),
@@ -59,6 +60,17 @@ const awardBody = z
   })
   .strict();
 const schemas = {
+  brackets: z
+    .object({
+      id,
+      category_id: id,
+      discipline_id: id.nullable(),
+      version: z.number().int().positive(),
+      draft: bracketSchema,
+      published: bracketSchema.nullable(),
+      published_at: date.nullable(),
+    })
+    .strict(),
   accounts: z
     .object({
       id,
@@ -178,26 +190,31 @@ const schemas = {
 const envelope = z
   .object({
     format: z.literal("siklab-backup"),
-    version: z.literal(2),
+    version: z.union([z.literal(2), z.literal(3)]),
     createdAt: date,
     checksum: z.string().regex(/^[a-f0-9]{64}$/),
     tables: z
       .object(
         Object.fromEntries(
-          TABLES.map((t) => [t, z.array(schemas[t]).max(100000)]),
+          TABLES.map((t) => [
+            t,
+            t === "brackets"
+              ? z.array(schemas[t]).max(100000).optional()
+              : z.array(schemas[t]).max(100000),
+          ]),
         ) as unknown as Record<(typeof TABLES)[number], z.ZodArray<z.ZodType>>,
       )
       .strict(),
   })
   .strict();
-async function exportInside(db: PoolClient) {
+export async function exportInside(db: PoolClient) {
   const tables: Record<string, unknown[]> = {};
   for (const t of TABLES)
     tables[t] = (await db.query(`SELECT * FROM ${t}`)).rows;
   const normalized = JSON.parse(JSON.stringify(tables));
   return {
     format: "siklab-backup",
-    version: 2,
+    version: 3,
     createdAt: new Date().toISOString(),
     tables: normalized,
     checksum: hash(JSON.stringify(normalized)),
@@ -206,9 +223,24 @@ async function exportInside(db: PoolClient) {
 export async function exportBackup(user: User) {
   if (user.role !== "superadmin")
     fail("Only the superadministrator can export private backups.", 403);
-  return transaction(exportInside);
+  return transaction(async (db) => {
+    await requireFreshSuperadmin(db, user);
+    return exportInside(db);
+  });
 }
-export async function restoreBackup(user: User, input: unknown) {
+export async function requireFreshSuperadmin(db: PoolClient, user: User) {
+  const fresh = await userById(db, user.id);
+  if (!fresh?.active || fresh.role !== "superadmin")
+    fail("An active superadministrator account is required.", 403);
+  if (fresh!.mustReset) fail("Change your temporary password before continuing.", 403);
+  return fresh!;
+}
+type RestoreResult = { ok: boolean; preview: boolean; checksum: string; counts: Record<string, number> };
+type RestoreHooks = {
+  before?: (db: PoolClient) => Promise<void>;
+  after?: (db: PoolClient, result: RestoreResult) => Promise<void>;
+};
+export async function restoreBackup(user: User, input: unknown, hooks: RestoreHooks = {}) {
   if (user.role !== "superadmin")
     fail("Only the superadministrator can restore backups.", 403);
   const req = z
@@ -225,6 +257,11 @@ export async function restoreBackup(user: User, input: unknown) {
   const raw = req.backup as { tables: unknown };
   if (hash(JSON.stringify(raw.tables)) !== backup.checksum)
     fail("Backup checksum does not match its contents.");
+  if (backup.version === 3 && !backup.tables.brackets)
+    fail("Version 3 backups must include brackets.");
+  if (backup.version === 2 && backup.tables.brackets)
+    fail("Version 2 backups cannot contain brackets.");
+  backup.tables.brackets ||= [];
   const counts = Object.fromEntries(
     TABLES.map((t) => [t, backup.tables[t].length]),
   );
@@ -234,10 +271,10 @@ export async function restoreBackup(user: User, input: unknown) {
   if (!mine?.active || mine.role !== "superadmin")
     fail("The backup must preserve your active superadministrator account.");
   return transaction(async (db) => {
+    if (req.preview) await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await db.query("SELECT pg_advisory_xact_lock(2026,1)");
-    const current = await userById(db, user.id);
-    if (!current?.active || current.role !== "superadmin")
-      fail("Your account no longer permits restoration.", 403);
+    await requireFreshSuperadmin(db, user);
+    await hooks.before?.(db);
     if (!req.preview) {
       const row = (
         await db.query("SELECT password_hash FROM accounts WHERE id=$1", [
@@ -250,20 +287,14 @@ export async function restoreBackup(user: User, input: unknown) {
         !(await bcrypt.compare(req.password, row.password_hash))
       )
         fail("Confirm the preview checksum and current password.", 403);
-      const before = await exportInside(db),
-        dir = path.resolve(process.env.BACKUP_DIR || "data/backups");
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        path.join(dir, `before-restore-${Date.now()}.json`),
-        JSON.stringify(before),
-        { mode: 0o600, flag: "wx" },
-      );
+      await saveSafetyBackup(await exportInside(db), "restore");
     }
     await db.query("SAVEPOINT validate_restore");
     await db.query("DELETE FROM sessions");
     await db.query("DELETE FROM idempotency");
     await db.query("UPDATE schedules SET published_id=NULL");
     for (const t of [
+      "brackets",
       "audit",
       "awards",
       "revisions",
@@ -276,20 +307,60 @@ export async function restoreBackup(user: User, input: unknown) {
     ])
       await db.query(`DELETE FROM ${t}`);
     for (const t of TABLES)
-      for (const row of backup.tables[t]) {
-        const record = row as Record<string, unknown>,
-          cols = Object.keys(record);
-        const values = cols.map((k) =>
-          ["data", "body", "before_data", "after_data"].includes(k)
-            ? JSON.stringify(record[k])
-            : record[k],
-        );
+      for (let offset = 0; offset < backup.tables[t].length; offset += 100) {
+        const rows = backup.tables[t].slice(offset, offset + 100) as Record<string, unknown>[];
+        const cols = Object.keys(rows[0]), values: unknown[] = [];
+        const tuples = rows.map((record) => `(${cols.map((k) => {
+          values.push(["data", "body", "before_data", "after_data", "draft", "published"].includes(k)
+            ? JSON.stringify(record[k]) : record[k]);
+          return `$${values.length}`;
+        }).join(",")})`);
         await db.query(
-          `INSERT INTO ${t} (${cols.map((k) => `"${k}"`).join(",")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(",")})`,
+          `INSERT INTO ${t} (${cols.map((k) => `"${k}"`).join(",")}) VALUES ${tuples.join(",")}`,
           values,
         );
       }
     const s = await snapshot(db);
+    const restoredBrackets = await bracketRecords(db);
+    for (const b of restoredBrackets) {
+      if (!!b.published !== !!b.publishedAt)
+        fail("Bracket publication timestamp mismatch.");
+      for (const other of restoredBrackets.filter((x) => x.id !== b.id))
+        for (const a of [b.draft, b.published])
+          for (const c of [other.draft, other.published])
+            if (
+              a &&
+              c &&
+              a.nodes.some(
+                (n) =>
+                  n.fixtureId &&
+                  c.nodes.some((m) => m.fixtureId === n.fixtureId),
+              )
+            )
+              fail("Duplicate fixture assignment across brackets.");
+      const raw = backup.tables.brackets.find(
+        (r: unknown) => (r as { id: string }).id === b.id,
+      ) as { category_id: string; discipline_id: string | null };
+      for (const graph of [b.draft, b.published])
+        if (graph) {
+          if (
+            graph.categoryId !== raw.category_id ||
+            graph.disciplineId !== raw.discipline_id ||
+            (graph.disciplineId &&
+              !s.disciplines.some(
+                (d) =>
+                  d.id === graph.disciplineId &&
+                  d.categoryId === graph.categoryId,
+              ))
+          )
+            fail("Invalid bracket identity or discipline.");
+          try {
+            validateBracket(graph, bracketContext(s), false);
+          } catch (error) {
+            fail((error as Error).message);
+          }
+        }
+    }
     for (const c of s.categories) {
       if (c.confirmed) rule.parse(c.rule);
       if (
@@ -415,11 +486,13 @@ export async function restoreBackup(user: User, input: unknown) {
         { checksum: backup.checksum, counts },
         "Validated restore; all sessions revoked.",
       );
-    return {
+    const result = {
       ok: true,
       preview: req.preview,
       checksum: backup.checksum,
       counts,
     };
+    await hooks.after?.(db, result);
+    return result;
   }, !req.preview);
 }

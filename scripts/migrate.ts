@@ -5,6 +5,8 @@ import { CATEGORIES, DISCIPLINES, COLLEGES } from "../src/lib/catalog";
 import { pool, uid } from "../src/lib/server/store";
 async function main() {
   if (!process.env.DATABASE_URL) process.loadEnvFile(".env.local");
+  // Deployment migrations use a separate schema owner, never the runtime role.
+  if (process.env.ADMIN_DATABASE_URL) process.env.DATABASE_URL = process.env.ADMIN_DATABASE_URL;
   const db = await pool().connect();
   try {
     await db.query("BEGIN");
@@ -91,13 +93,14 @@ async function main() {
             "Set a strong SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD before first setup.",
           );
         await db.query(
-          "INSERT INTO accounts(id,name,email,role,password_hash) VALUES($1,$2,$3,$4,$5)",
+          "INSERT INTO accounts(id,name,email,role,password_hash,must_reset) VALUES($1,$2,$3,$4,$5,$6)",
           [
             uid(),
             "Event administrator",
             email.toLowerCase(),
             "superadmin",
             await bcrypt.hash(password, 12),
+            process.env.SUPERADMIN_MUST_RESET === "true",
           ],
         );
       }

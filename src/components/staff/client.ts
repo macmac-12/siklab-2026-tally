@@ -2,6 +2,7 @@ export async function api<T = Record<string, unknown>>(
   path: string,
   body?: unknown,
   key?: string,
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
@@ -13,7 +14,7 @@ export async function api<T = Record<string, unknown>>(
             ...(key ? { "Idempotency-Key": key } : {}),
           },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? 15000),
     cache: "no-store",
   });
   const data = await response.json();

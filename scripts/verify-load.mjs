@@ -8,6 +8,13 @@ const config = JSON.parse(
   ),
   base = config.url;
 const duration = Number(process.env.LOAD_SECONDS || 600) * 1000;
+const viewerCount = Number(process.env.LOAD_VIEWERS || 1000);
+const pollMs = Number(process.env.LOAD_POLL_MS || 300000);
+if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname) ||
+    !/^\/siklab_rehearsal_/.test(new URL(config.databaseUrl).pathname))
+  throw new Error("Synthetic load is limited to the isolated local rehearsal. Hosted tests require provider authorization.");
+if (!Number.isInteger(viewerCount) || viewerCount < 1 || viewerCount > 10000 || !Number.isFinite(pollMs) || pollMs < 1000)
+  throw new Error("Invalid local load configuration.");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const metrics = { public: [], write: [], private: [] },
   failures = [],
@@ -65,7 +72,7 @@ const baseline = (await req("public/overview")).data.version;
 const started = Date.now(),
   stopAt = started + duration;
 async function viewer(i) {
-  await sleep((i / 500) * 20000);
+  await sleep((i / viewerCount) * Math.min(20000, pollMs));
   let etag = "";
   while (Date.now() < stopAt) {
     const r = await req(
@@ -73,7 +80,7 @@ async function viewer(i) {
       { kind: "public", headers: etag ? { "if-none-match": etag } : {} },
     );
     if (r) etag = r.response.headers.get("etag") || "";
-    await sleep(Math.min(20000, Math.max(0, stopAt - Date.now())));
+    await sleep(Math.min(pollMs, Math.max(0, stopAt - Date.now())));
   }
 }
 async function staff(user, i) {
@@ -181,10 +188,10 @@ const sampler = setInterval(() => {
     .catch(() => {});
 }, 5000);
 console.log(
-  `Running ${duration / 1000}s production rehearsal: 500 viewers, 18 game heads, 2 reviewers.`,
+  `Running ${duration / 1000}s local production rehearsal: ${viewerCount} viewers (${pollMs / 1000}s refresh), 18 game heads, 2 reviewers.`,
 );
 const tasks = [
-  ...Array.from({ length: 500 }, (_, i) => viewer(i)),
+  ...Array.from({ length: viewerCount }, (_, i) => viewer(i)),
   ...users.slice(0, 18).map(staff),
   ...users.slice(18).map(reviewer),
 ];
@@ -223,10 +230,10 @@ const report = {
     node: process.version,
   },
   maxServerRssMiB: Math.round(maxServerRssKiB / 1024),
-  viewers: 500,
+  viewers: viewerCount,
   staff: 20,
   workload:
-    "20s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results; logins warmed before timing.",
+    `${pollMs / 1000}s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results; logins warmed before timing. Local only; no hosted-capacity claim.`,
   summary,
   errorRate: failed / total,
   acknowledgedWrites: acknowledged.length,
@@ -242,7 +249,7 @@ report.pass =
   report.errorRate < 0.01 &&
   report.lostAcknowledgedWrites === 0;
 await writeFile(
-  "docs/evidence/phase4-load.json",
+  "docs/evidence/deployment-local-load.json",
   JSON.stringify(report, null, 2) + "\n",
 );
 console.log(JSON.stringify(report, null, 2));

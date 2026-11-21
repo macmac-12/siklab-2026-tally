@@ -1,12 +1,16 @@
 # Siklab 2026 role guides
 
+The site opens in dark mode. Use **Light** or **Dark** in the header to switch appearance; your choice is remembered in this browser across public and staff pages and open tabs. It does not change your filters or entered values. Print output uses the light palette.
+
 ## Students
 
-Open the homepage for the official college tally and current/upcoming games. Use Schedules to filter by college, event, date, venue or status. Use Results for approved scores and placements. Standings explains which championship awards contributed each college's points.
+The pinned leaders strip shows campus-wide official championship points on every public page. Overview puts the complete seven-team tally before the daily schedule on phones. The schedule shows every competition today, or the next scheduled day when today is empty. The college filter affects only the timeline; official standings always include every college. Succession-based competitions follow their predecessor without an invented start time.
 
-A completed game may show “Awaiting result” until review finishes. Match scores, internal E-games league points, and Athletics/division sub-points are different from official college points. Equal overall totals share a rank.
+Schedules opens competition cards grouped by date, including head-to-head matches and multi-entry placing events. Filter by college, event, date, venue and status, or use the date/status shortcuts. Selecting an event keeps cards visible; choose **Tournament bracket** to open its published graph, or **Schedule cards** to return. Bracket filters highlight fixtures without removing the tournament path. On phones, choose one round at a time and use each match’s winner/loser links. Future matches show placeholders and “To be announced” logistics. Events without brackets retain the agenda.
 
-Copy Link preserves filters. Print and Export this page use the currently displayed page, not unseen pagination. All times use Asia/Manila. If a connection fails, the last loaded information stays visible with a warning; use Try again. The “Checked” time records a successful refresh, not a claim that a game is being scored live.
+Results shows seven college banners, each with its three latest approved results. A shared result appears under every participating college. Expand a row for full placings and public notes; **View all results** opens that college’s history, 20 per page. Tournament tables and discipline sub-points are secondary disclosures using complete data. Match scores and sub-points are separate from championship points.
+
+The address preserves filters, event, bracket, round and page. All times use Asia/Manila. A failed refresh retains the matching view with a stale warning; an initial failure offers Try again. Changing filters never presents the previous filter’s data as current. “Checked” records a successful refresh, not live scoring.
 
 ## Game staff
 
@@ -27,6 +31,14 @@ Postpone or cancel with a public reason; change times with a rescheduling reason
 
 If another person changes your schedule, your stale save is rejected. Keep your text, close/reopen the editor to load the latest record, and reapply the intended change. A failed request keeps the current form input. Refreshing the workspace does not silently replace the version held by an open schedule/result form.
 
+### Arrange a bracket
+
+In an assigned event’s Schedules workspace, choose **Arrange tournament bracket**. Add named lanes and rounds in connection order, then add matches with two slots: a known entry, winner or loser of an earlier match, explicit bye, or TBD. Link an existing confirmed fixture only when its participants and discipline match. No seeding or fixtures are generated automatically.
+
+Preview uses the student bracket view. **Save draft** leaves the published bracket intact; **Publish bracket** makes the validated graph public. The editor closes after a successful save; reopen to continue. Versions prevent stale overwrites and retries are idempotent. Resolve invalid references, duplicate fixtures or participant mismatches before saving. Removing a referenced match/round is disabled until its dependents are reassigned.
+
+Approved results and published byes resolve advancement. Draws, double forfeits and unapproved results remain unresolved. Corrections preserve confirmed fixtures and flag inconsistent paths for staff reconfirmation. Confirm subsequent fixture participants manually, then update/publish the bracket as needed.
+
 ## Reviewers and administrators
 
 Review queue contains private pending results and championship awards. Check event, entries, scores/placements, calculated points, source context and correction reason. Approve publishes the submission. Return for revision requires an explanation.
@@ -43,6 +55,8 @@ History shows recent actions with stable actor identities, reasons and before/af
 
 Only the superadministrator can export/restore private backups. Backups include password hashes and internal history; store them privately. They omit sessions and login-attempt records.
 
-Download Backup regularly. To restore, select a version-2 backup, validate it, inspect record counts, enter your current password and confirm replacement. The server saves a pre-restore copy under `data/backups/`, validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
+Download Backup regularly. To restore, select a version-2 or version-3 backup, validate it, inspect record counts, enter your current password and confirm replacement. The server saves a pre-restore copy under `data/backups/`, validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
 
 Keep the PostgreSQL volume and independent copies of backups. A successful backup download alone is not proof of recoverability; rehearse restoration into a separate local database.
+
+Backup version 3 includes bracket drafts and publications. Version-2 restores are accepted with no brackets; restoration replaces the entire saved dataset after the existing preview/password checks.

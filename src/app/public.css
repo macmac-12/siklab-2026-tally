@@ -1,0 +1,1553 @@
+.public-app,
+.bracket-editor {
+  --accent: var(--public-accent-text);
+  --ink: var(--public-text);
+  --muted: var(--public-muted);
+  --line: var(--public-border);
+  --paper: var(--public-subtle);
+  --radius: 8px;
+  color: var(--public-text);
+  background: var(--public-bg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.public-app {
+  background: var(--color-public-canvas);
+  min-height: 100vh;
+  --leader-height: 96px;
+}
+.public-app .shell {
+  width: 100%;
+  max-width: 1200px;
+  padding-left: 16px;
+  padding-right: 16px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.public-app *,
+.bracket-editor * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--public-scroll) var(--public-subtle);
+}
+.public-app h1,
+.bracket-editor h1 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.public-app h2,
+.bracket-editor h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+.public-app h3,
+.bracket-editor h3 {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0;
+}
+.public-app p {
+  line-height: 1.5;
+  font-size: 14px;
+}
+.public-app .eyebrow,
+.bracket-editor .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.public-app .accent,
+.public-app .text-link {
+  color: var(--public-accent-text);
+}
+.public-app .muted,
+.bracket-editor .muted {
+  color: var(--public-muted);
+}
+.public-app .numeric,
+.public-app time,
+.public-app .points,
+.public-app .rank,
+.public-app .count,
+.public-app .freshness,
+.public-app .agenda-time,
+.public-app table,
+.public-app .match-logistics,
+.public-app .result-summary-score small,
+.public-app .pagination,
+.bracket-editor .numeric {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-data);
+}
+.public-app button,
+.public-app input,
+.public-app select,
+.bracket-editor button,
+.bracket-editor input,
+.bracket-editor select {
+  min-height: 44px;
+  border: 1px solid var(--color-control-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--public-text);
+  background: var(--color-control-bg);
+  font-size: 14px;
+  font-weight: 500;
+}
+.public-app input,
+.public-app select,
+.bracket-editor input,
+.bracket-editor select {
+  height: 44px;
+  padding: 0 12px;
+}
+.public-app button,
+.bracket-editor button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.public-app button:hover:not(:disabled),
+.bracket-editor button:hover:not(:disabled),
+.public-app summary:hover {
+  background: var(--color-raised);
+  border-color: var(--public-muted);
+}
+.public-app button:active:not(:disabled),
+.bracket-editor button:active:not(:disabled) {
+  background: var(--public-soft);
+}
+.public-app button[aria-pressed="true"],
+.bracket-editor button[aria-pressed="true"],
+.public-app button[aria-pressed="true"]:is(:hover, :active):not(:disabled),
+.bracket-editor button[aria-pressed="true"]:is(:hover, :active):not(:disabled) {
+  color: var(--color-on-scoreboard);
+  border-color: var(--color-selected-border);
+  background: var(--color-scoreboard);
+}
+.public-app :focus-visible,
+.bracket-editor :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.public-app a:hover {
+  text-decoration: underline;
+}
+.public-app .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.public-app button:disabled,
+.bracket-editor button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.public-app .lucide,
+.bracket-editor .lucide {
+  flex-shrink: 0;
+  stroke-width: 1.75;
+}
+.public-app .site-header {
+  background: var(--public-bg);
+  border-bottom: 1px solid var(--public-border);
+}
+.public-app .header-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+  padding-bottom: 0;
+  min-height: 0;
+}
+.public-app .header-inner nav {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  border-top: 1px solid var(--public-border);
+  padding: 4px 0;
+}
+.public-app .header-inner nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 44px;
+  font-size: 14px;
+  padding: 8px 4px;
+  border-radius: 6px;
+}
+.public-app .header-inner nav a[aria-current="page"] {
+  color: var(--public-accent-text);
+  background: var(--public-soft);
+}
+.public-app .event-date {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-data);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.leader-strip {
+  --color-focus: var(--color-on-scoreboard);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 3px solid var(--public-accent);
+  background: var(--color-scoreboard);
+  color: var(--color-on-scoreboard);
+}
+.public-app .leader-inner {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.leader-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.leader-caption a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.leader-caption > span {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-on-scoreboard) 72%, transparent);
+  text-align: right;
+}
+.leader-teams {
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+}
+.leader-team {
+  display: grid;
+  grid-template-columns: 12px 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid
+    color-mix(in srgb, var(--color-on-scoreboard) 24%, transparent);
+  min-width: 0;
+}
+.leader-team:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+.leader-team:last-child {
+  padding-right: 0;
+}
+.leader-rank {
+  grid-row: 1 / 3;
+  color: color-mix(in srgb, var(--color-on-scoreboard) 72%, transparent);
+  font-size: 12px;
+}
+.leader-team > .college-crest {
+  grid-row: 1 / 3;
+  width: 28px;
+  height: 28px;
+}
+.leader-code {
+  font-size: 14px;
+  font-weight: 600;
+}
+.leader-team > strong {
+  grid-column: 3;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.leader-team small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.leader-pending {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  font-size: 12px;
+}
+.leader-pending > span {
+  max-width: 70%;
+  color: color-mix(in srgb, var(--color-on-scoreboard) 80%, transparent);
+}
+.leader-pending a {
+  white-space: nowrap;
+  text-decoration: underline;
+}
+.public-app .page-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 0 24px;
+}
+.public-app .page-intro h1 {
+  margin: 8px 0 12px;
+}
+.public-app .page-intro p {
+  max-width: 600px;
+  color: var(--public-muted);
+  font-size: 14px;
+}
+.public-app .freshness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.public-app .connection-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--public-success);
+  border-radius: 50%;
+}
+.public-app .connection-dot.stale {
+  background: var(--public-warning);
+}
+.public-app .section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 0;
+  margin-bottom: 20px;
+}
+.public-app .section-head h2 {
+  margin-top: 4px;
+}
+.public-app .count {
+  display: inline-block;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--public-subtle);
+  white-space: nowrap;
+}
+.public-app .panel {
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+  background: var(--public-bg);
+  box-shadow: none;
+  overflow: hidden;
+}
+.public-app .overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  align-items: flex-start;
+}
+.public-app .standings {
+  width: 100%;
+  min-width: 0;
+}
+.public-app .tally-heading {
+  margin: 0;
+  padding: 20px 16px;
+  background: var(--color-scoreboard);
+  color: var(--color-on-scoreboard);
+  position: relative;
+}
+.public-app .tally-heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20px;
+  bottom: 20px;
+  width: 4px;
+  background: var(--public-accent);
+}
+.public-app .tally-heading .eyebrow {
+  color: var(--color-on-scoreboard);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.public-app .tally-heading .count {
+  background: color-mix(in srgb, var(--color-on-scoreboard) 12%, transparent);
+  color: var(--color-on-scoreboard);
+  align-self: flex-start;
+}
+.public-app .tally-heading .count > span {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 12px;
+  text-align: center;
+  font-weight: 400;
+}
+.public-app .tally-awaiting {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--public-muted);
+  background: var(--public-subtle);
+  border-bottom: 1px solid var(--public-border);
+}
+.public-app .standings table {
+  table-layout: auto;
+}
+.public-app table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.public-app table th,
+.public-app table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--public-border);
+}
+.public-app table th:first-child,
+.public-app table td:first-child {
+  padding-left: 12px;
+}
+.public-app table th:last-child,
+.public-app table td:last-child {
+  padding-right: 12px;
+}
+.public-app table thead th {
+  background: var(--public-subtle);
+  color: var(--public-muted);
+  font-family: var(--font-body);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.public-app table tbody th {
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.public-app table tbody tr:last-child td,
+.public-app table tbody tr:last-child th {
+  border-bottom: 0;
+}
+.public-app .standings .rank {
+  font-size: 13px;
+  color: var(--public-muted);
+  width: 32px;
+}
+.public-app .rank-label {
+  display: none;
+}
+.public-app .standings .college-identity {
+  gap: 6px;
+  font-size: 12px;
+}
+.public-app .standings .college-crest {
+  width: 24px;
+  height: 24px;
+}
+.public-app .standings .points {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.public-app .standings .leading-row {
+  background: var(--public-soft);
+}
+.public-app .standings .leading-row .points {
+  color: var(--public-accent-text);
+}
+.public-app .standings abbr {
+  text-decoration: none;
+  cursor: help;
+}
+.public-app .medal-gold abbr,
+.public-app .medal-silver abbr,
+.public-app .medal-bronze abbr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--public-text);
+}
+.public-app .medal-gold abbr {
+  background: var(--color-medal-gold-bg);
+  color: var(--color-medal-gold-text);
+}
+.public-app .medal-silver abbr {
+  background: var(--color-medal-silver-bg);
+  color: var(--color-medal-silver-text);
+}
+.public-app .medal-bronze abbr {
+  background: var(--color-medal-bronze-bg);
+  color: var(--color-medal-bronze-text);
+}
+.public-app .medal-count {
+  font-size: 12px;
+}
+.public-app .tally-foot {
+  padding: 16px;
+  border-top: 1px solid var(--public-border);
+}
+.public-app .table-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--public-muted);
+}
+.public-app .college-name {
+  display: none;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--public-muted);
+  margin-top: 4px;
+}
+.public-app .daily-timeline {
+  min-width: 0;
+}
+.timeline-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--public-subtle);
+  margin-bottom: 20px;
+}
+.timeline-filter label {
+  width: 100%;
+  margin: 0;
+}
+.timeline-filter > span {
+  font-size: 12px;
+  flex: 1;
+}
+.timeline-filter > a {
+  font-size: 12px;
+}
+.public-app label,
+.bracket-editor label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--public-muted);
+  gap: 4px;
+}
+.public-app .filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+  background: var(--public-subtle);
+  margin-bottom: 20px;
+  align-items: flex-end;
+}
+.public-app .filter-bar label {
+  flex: 1 1 calc(50% - 12px);
+  min-width: 0;
+  margin: 0;
+}
+.public-app .filter-bar label:nth-of-type(2) {
+  flex-basis: 100%;
+}
+.filter-label {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.public-app .filter-bar .quiet {
+  min-height: 36px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 0;
+  margin-left: auto;
+  text-decoration: underline;
+}
+.schedule-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.shortcut-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--public-subtle);
+  border-radius: 8px;
+  max-width: 100%;
+}
+.public-app .shortcut-group button {
+  padding: 8px 10px;
+  min-height: 40px;
+  background: transparent;
+  border-color: transparent;
+  font-size: 12px;
+}
+.public-app .shortcut-group button[aria-pressed="true"] {
+  border-color: var(--color-selected-border);
+  background: var(--color-scoreboard);
+  color: var(--color-on-scoreboard);
+}
+.agenda-day {
+  margin-bottom: 28px;
+}
+.agenda-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 2px solid var(--public-text);
+}
+.agenda-date h3 {
+  flex: 1;
+}
+.agenda-date > span {
+  font-size: 12px;
+  color: var(--public-muted);
+  white-space: nowrap;
+}
+.agenda-day ol {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.agenda-day li {
+  min-width: 0;
+}
+.public-app .game-card {
+  padding: 16px;
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+  background: var(--public-bg);
+  box-shadow: none;
+  min-width: 0;
+  height: 100%;
+}
+.game-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.public-app .game-top .eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  color: var(--public-muted);
+  display: inline;
+}
+.public-app .game-top .eyebrow > span {
+  padding: 0 4px;
+  color: var(--public-accent-text);
+}
+.game-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.public-app .game-title h3 {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.game-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--public-muted);
+  white-space: nowrap;
+  padding-top: 2px;
+}
+.public-app .game-meta {
+  color: var(--public-muted);
+  margin: 4px 0 16px;
+  font-size: 12px;
+}
+.public-app .status,
+.bracket-editor .status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--public-text);
+  background: var(--public-subtle);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.public-app .status.ongoing {
+  color: var(--color-on-scoreboard);
+  background: var(--color-scoreboard);
+  border-left: 3px solid var(--public-accent);
+}
+.public-app .status.cancelled {
+  border-left: 3px solid var(--public-error);
+}
+.public-app .status.postponed {
+  border-left: 3px solid var(--public-warning);
+}
+.public-app .status.completed {
+  border-left: 3px solid var(--public-success);
+}
+.public-app .match-score {
+  display: flex;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
+  margin: 0;
+}
+.score-side {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--public-border);
+}
+.score-side > .college-identity {
+  min-width: 0;
+}
+.score-side > strong {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--public-text);
+}
+.score-side > .pending-score {
+  color: var(--public-muted);
+  font-size: 20px;
+}
+.public-app .game-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--public-border);
+  font-size: 12px;
+  color: var(--public-muted);
+}
+.game-footer > span {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.game-footer .agenda-time {
+  color: var(--public-text);
+  font-weight: 500;
+  font-size: 12px;
+}
+.public-app .approved-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 0 0;
+  color: var(--public-muted);
+  font-size: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.placing-preview {
+  background: var(--public-subtle);
+  border-radius: 6px;
+  padding: 16px 12px;
+}
+.entrant-crests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.entrant-crests > span {
+  display: inline-flex;
+}
+.public-app .placing-preview > p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+.placing-preview > .muted {
+  font-size: 12px;
+}
+.placing-disclosure {
+  margin-top: 12px;
+}
+.placing-disclosure > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--public-accent-text);
+  padding: 8px 0;
+}
+.public-app .placings {
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.public-app .placings li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--public-border);
+}
+.placing-rank {
+  font-size: 12px;
+  width: 72px;
+  flex-shrink: 0;
+}
+.result-note {
+  font-size: 12px;
+  color: var(--public-muted);
+  margin-top: 8px;
+}
+.schedule-change,
+.reconfirm {
+  padding: 8px 12px;
+  margin-top: 12px;
+  background: var(--public-soft);
+  color: var(--public-text);
+  font-size: 12px;
+  border-left: 3px solid var(--public-warning);
+  border-radius: 0 4px 4px 0;
+}
+.student-empty {
+  padding: 32px 16px;
+  background: var(--public-subtle);
+  border: 1px dashed var(--public-border);
+  border-radius: 8px;
+  text-align: center;
+}
+.student-empty > .lucide {
+  color: var(--public-muted);
+}
+.student-empty h3 {
+  margin: 12px 0 8px;
+}
+.student-empty p {
+  color: var(--public-muted);
+  margin: 0 auto 16px;
+  max-width: 400px;
+}
+.public-app .loading {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--public-muted);
+  background: var(--public-subtle);
+  border-radius: 8px;
+  font-size: 14px;
+}
+.public-app .alert,
+.bracket-editor .alert {
+  color: var(--public-text);
+  background: var(--public-soft);
+  border: 1px solid var(--public-error);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.public-app .alert button {
+  margin-top: 8px;
+}
+.college-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.college-banner {
+  border: 1px solid var(--public-border);
+  border-top: 4px solid var(--college-accent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.college-buhi {
+  --college-accent: var(--college-buhi);
+}
+.college-cas {
+  --college-accent: var(--college-cas);
+}
+.college-ccs {
+  --college-accent: var(--college-ccs);
+}
+.college-cea {
+  --college-accent: var(--college-cea);
+}
+.college-chs {
+  --college-accent: var(--college-chs);
+}
+.college-ctde {
+  --college-accent: var(--college-ctde);
+}
+.college-cthbm {
+  --college-accent: var(--college-cthbm);
+}
+.college-banner > header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 16px;
+  background: var(--public-subtle);
+}
+.college-banner-identity {
+  min-width: 0;
+}
+.public-app .college-banner-identity h2 {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 400;
+  margin: 8px 0 0;
+  color: var(--public-muted);
+}
+.college-banner > header > a {
+  font-size: 12px;
+}
+.college-result {
+  border-top: 1px solid var(--public-border);
+}
+.college-result summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  gap: 12px;
+  padding: 16px 36px 16px 16px;
+  cursor: pointer;
+}
+.college-result summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.college-result summary > div > strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.college-result summary > div > span {
+  font-size: 12px;
+}
+.college-result summary .eyebrow {
+  font-size: 12px;
+  color: var(--public-muted);
+}
+.college-result summary::after {
+  content: "+";
+  position: absolute;
+  right: 16px;
+  top: 20px;
+  font-size: 20px;
+  color: var(--public-muted);
+}
+.college-result[open] summary::after {
+  content: "−";
+}
+.result-summary-score {
+  text-align: left;
+  width: 100%;
+}
+.result-summary-score .result-contenders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.result-contenders .college-crest {
+  width: 20px;
+  height: 20px;
+}
+.result-contenders .college-identity {
+  font-size: 12px;
+}
+.public-app .result-summary-score > strong {
+  font-size: 24px;
+}
+.result-summary-score small {
+  color: var(--public-muted);
+  font-size: 12px;
+}
+.result-details {
+  padding: 16px;
+  background: var(--public-subtle);
+}
+.college-empty {
+  padding: 16px;
+  color: var(--public-muted);
+}
+.public-app .college-empty .text-link {
+  font-size: 12px;
+}
+.secondary-summary {
+  margin-top: 32px;
+  border-top: 1px solid var(--public-border);
+  padding-top: 20px;
+}
+.secondary-summary > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.secondary-summary > p {
+  margin: 16px 0;
+}
+.secondary-summary .panel,
+.public-app .stack > .panel:not(.standings) {
+  margin-top: 20px;
+}
+.secondary-summary .panel > .section-head,
+.public-app .stack > .panel:not(.standings) > .section-head {
+  padding: 20px 16px;
+  margin: 0;
+}
+.view-controls,
+.round-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 24px 0;
+}
+.view-controls label {
+  min-width: 0;
+  width: 100%;
+}
+.public-app .view-controls button {
+  flex: 1;
+  font-size: 12px;
+}
+.bracket-scroll {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+  background: var(--public-subtle);
+  scrollbar-gutter: stable;
+}
+.bracket-board {
+  position: relative;
+  width: 100%;
+  display: block;
+  padding: 16px;
+}
+.bracket-round {
+  display: none;
+  width: 100%;
+  flex-direction: column;
+  z-index: 1;
+  position: relative;
+}
+.bracket-round.selected-round {
+  display: flex;
+}
+.bracket-round > header {
+  padding: 8px 0 12px;
+  border-bottom: 2px solid var(--public-text);
+}
+.bracket-round > header .eyebrow {
+  color: var(--public-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.round-matches {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 24px;
+  flex: 1;
+  padding-top: 24px;
+}
+.bracket-match {
+  background: var(--public-bg);
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.bracket-match.matches-filter {
+  border-top: 3px solid var(--public-accent);
+}
+.match-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.bracket-participant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--public-border);
+  padding: 8px 0;
+}
+.bracket-participant > span {
+  min-width: 0;
+}
+.bracket-participant .college-identity {
+  font-size: 12px;
+}
+.bracket-participant .college-crest {
+  width: 28px;
+  height: 28px;
+}
+.bracket-participant > strong {
+  font-size: 20px;
+}
+.match-logistics {
+  color: var(--public-muted);
+  font-size: 12px;
+  padding: 8px 0;
+}
+.match-connections {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.public-app .match-connections button,
+.bracket-editor .match-connections button {
+  font-size: 12px;
+  min-height: 36px;
+  padding: 4px 8px;
+}
+.bracket-connectors {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.bracket-connectors path {
+  stroke: var(--public-scroll-hover);
+  stroke-width: 1.5;
+  fill: none;
+}
+.public-app .round-controls {
+  flex-wrap: nowrap;
+  overflow: auto;
+  padding: 4px 0;
+}
+.round-controls button {
+  flex-shrink: 0;
+}
+.bracket-section > .section-head {
+  flex-wrap: wrap;
+}
+.bracket-section > .section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bracket-section > p {
+  font-size: 12px;
+}
+.bracket-editor {
+  width: min(1100px, calc(100% - 32px));
+  background: var(--color-dialog-bg);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+}
+.bracket-editor::backdrop {
+  background: var(--color-overlay);
+}
+.bracket-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.bracket-editor .node-form {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid var(--public-border);
+  border-radius: 8px;
+}
+.bracket-editor .form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.bracket-editor h1 {
+  font-size: 32px;
+}
+.bracket-editor h2 {
+  margin-top: 32px;
+  font-size: 24px;
+}
+.bracket-editor .editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bracket-editor .editor-row label {
+  flex: 1;
+  min-width: 160px;
+}
+.bracket-editor .editor-actions {
+  margin: 24px 0;
+}
+.bracket-editor .primary {
+  background: var(--public-accent-text);
+  color: var(--color-on-primary);
+}
+.bracket-editor .primary:is(:hover, :active):not(:disabled) {
+  background: var(--color-scoreboard);
+  color: var(--color-on-scoreboard);
+}
+.public-app .pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  font-size: 12px;
+}
+.public-app .site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 48px;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  border-top: 1px solid var(--public-border);
+  font-size: 12px;
+  color: var(--public-muted);
+}
+.public-app .award-detail summary {
+  padding: 16px;
+  font-size: 14px;
+}
+.public-app .empty {
+  padding: 32px 16px;
+}
+.public-app.display-mode .points {
+  font-size: 22px;
+}
+.public-app.display-mode .header-inner nav,
+.public-app.display-mode .site-footer {
+  display: none;
+}
+@media (min-width: 768px) {
+  .public-app .shell {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .public-app .header-inner {
+    flex-wrap: wrap;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    gap: 24px;
+  }
+  .public-app .header-inner nav {
+    width: auto;
+    border: 0;
+    padding: 0;
+    gap: 8px;
+  }
+  .public-app .header-inner nav a {
+    flex: initial;
+    padding: 8px 12px;
+  }
+  .public-app .page-intro {
+    flex-direction: row;
+    align-items: flex-end;
+    padding: 36px 0 32px;
+  }
+  .public-app .leader-inner {
+    min-height: 80px;
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 24px;
+    align-items: center;
+  }
+  .leader-caption {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .leader-caption > span {
+    text-align: left;
+  }
+  .leader-teams {
+    margin: 0;
+  }
+  .leader-team {
+    grid-template-columns: 16px 32px minmax(0, 1fr);
+    padding: 0 16px;
+    gap: 0 8px;
+  }
+  .leader-team > .college-crest {
+    width: 32px;
+    height: 32px;
+  }
+  .leader-code {
+    font-size: 14px;
+  }
+  .leader-team > strong {
+    font-size: 18px;
+  }
+  .leader-pending {
+    min-height: 48px;
+    font-size: 14px;
+  }
+  .public-app .overview-grid {
+    grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
+    gap: 28px;
+  }
+  .public-app .overview-grid > .standings {
+    position: sticky;
+    top: calc(var(--leader-height) + 16px);
+  }
+  .public-app .overview-grid .tally-heading {
+    padding: 24px 16px;
+  }
+  .public-app .filter-bar label {
+    flex: 1 1 128px;
+  }
+  .public-app .filter-bar label:nth-of-type(2) {
+    flex: 2 1 200px;
+  }
+  .public-app .filter-label {
+    width: 100%;
+  }
+  .public-app > main > .agenda .agenda-day ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .public-app .standings-detail .college-name {
+    display: block;
+  }
+  .public-app .standings-detail table th,
+  .public-app .standings-detail table td {
+    padding: 16px;
+  }
+  .public-app .standings-detail .college-identity {
+    font-size: 16px;
+  }
+  .public-app .standings-detail .college-crest {
+    width: 32px;
+    height: 32px;
+  }
+  .public-app .rank-label {
+    display: inline;
+  }
+  .public-app .rank-symbol {
+    display: none;
+  }
+  .college-banner > header {
+    flex-wrap: nowrap;
+    padding: 24px;
+  }
+  .college-result summary {
+    flex-wrap: nowrap;
+    padding: 20px 48px 20px 24px;
+    gap: 24px;
+  }
+  .result-summary-score {
+    text-align: right;
+    margin-left: auto;
+    width: auto;
+    flex-shrink: 0;
+  }
+  .result-summary-score .result-contenders {
+    justify-content: flex-end;
+  }
+  .result-details {
+    padding: 24px;
+  }
+  .bracket-board {
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+    padding: 24px;
+    gap: 64px;
+    align-items: stretch;
+  }
+  .bracket-round,
+  .bracket-round.selected-round {
+    display: flex;
+    width: 264px;
+    flex: 0 0 264px;
+  }
+  .bracket-connectors {
+    display: block;
+  }
+  .view-controls label {
+    width: auto;
+    min-width: 200px;
+    margin: 0;
+  }
+  .public-app .view-controls button {
+    flex: initial;
+    font-size: 14px;
+  }
+  .bracket-editor {
+    padding: 24px;
+  }
+  .bracket-editor .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .public-app.display-mode .points {
+    font-size: 28px;
+  }
+}
+@media (min-width: 1024px) {
+  .public-app .event-date {
+    display: inline-flex;
+  }
+  .public-app .overview-grid {
+    gap: 32px;
+    grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
+  }
+  .public-app .leader-inner {
+    min-height: 72px;
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .leader-team {
+    grid-template-columns: 20px 32px auto auto;
+    grid-template-rows: auto;
+    gap: 8px;
+  }
+  .leader-rank,
+  .leader-team > .college-crest {
+    grid-row: auto;
+  }
+  .leader-team > strong {
+    grid-column: auto;
+    margin-left: auto;
+    font-size: 20px;
+  }
+  .public-app .standings .college-identity {
+    font-size: 14px;
+  }
+  .public-app .standings .college-crest {
+    width: 28px;
+    height: 28px;
+  }
+  .public-app .standings table th,
+  .public-app .standings table td {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .public-app .filter-label {
+    width: auto;
+    flex: 0 0 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .public-app *,
+  .bracket-editor * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@media (forced-colors: active) {
+  .public-app *,
+  .bracket-editor * {
+    scrollbar-color: auto;
+  }
+  .bracket-connectors path {
+    stroke: CanvasText;
+  }
+  .bracket-match.matches-filter {
+    border-top-color: Highlight;
+  }
+  .leader-strip,
+  .public-app .tally-heading {
+    border: 1px solid CanvasText;
+  }
+}
+
+/* Participant text wraps independently of the score column. */
+.public-app .score-side .college-identity-code {
+  font-size: 16px;
+  font-family: var(--font-body);
+  white-space: normal;
+}
+.public-app .score-side .college-identity-copy {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767px) {
+  .public-app .header-inner nav {
+    order: 1;
+  }
+  .leader-team small {
+    display: none;
+  }
+}
+
+/* Refresh cadence and last-check time share one stable, public-only control. */
+.public-app .public-refresh-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.public-app .public-refresh-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.public-app .public-refresh-action > span {
+  color: var(--public-muted);
+  font-size: 12px;
+}

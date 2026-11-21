@@ -1,0 +1,327 @@
+/* Canonical runtime tokens. DESIGN.md documents this file; components consume it. */
+:root {
+  color-scheme: light;
+  --color-canvas: #f3f4f6;
+  --color-public-canvas: #ffffff;
+  --color-bg: #ffffff;
+  --color-subtle: #f3f4f6;
+  --color-raised: #f3f4f6;
+  --color-control-bg: #ffffff;
+  --color-dialog-bg: #ffffff;
+  --color-ink: #15181c;
+  --color-muted: #59616d;
+  --color-border: #e1e4e8;
+  --color-control-border: #7a8494;
+  --color-selected-border: #171b20;
+  --color-accent: #d8471c;
+  --color-accent-text: #b93612;
+  --color-accent-hover: #a63010;
+  --color-soft: #fff0e8;
+  --color-scoreboard: #171b20;
+  --color-on-dark: #ffffff;
+  --color-on-scoreboard: #ffffff;
+  --color-on-primary: #ffffff;
+  --color-on-danger: #ffffff;
+  --color-danger-action: #b42318;
+  --color-focus: #b93612;
+  --color-overlay: #111820b3;
+  --color-brand-plate: #ffffff;
+  --color-brand-ink: #15181c;
+  --color-brand-muted: #59616d;
+  --color-brand-accent: #b93612;
+  --color-crest-plate: transparent;
+  --color-sidebar-muted: #c2c8d0;
+  --color-success: #187445;
+  --color-warning: #925600;
+  --color-error: #b42318;
+  --color-success-soft: #eaf5ee;
+  --color-warning-soft: #fff4de;
+  --color-danger-soft: #fff0ee;
+  --color-info: #3c5577;
+  --color-info-soft: #edf1fa;
+  --color-scroll: #929ba7;
+  --color-scroll-hover: #59616d;
+  --color-gold: #aa7315;
+  --color-silver: #697586;
+  --color-bronze: #9c603a;
+  --color-medal-gold-bg: #fff4de;
+  --color-medal-gold-text: #79510c;
+  --color-medal-silver-bg: #edf1f5;
+  --color-medal-silver-text: #4b5768;
+  --color-medal-bronze-bg: #f5e8df;
+  --color-medal-bronze-text: #784523;
+  --college-buhi: #d43d9e;
+  --college-cas: #d94846;
+  --college-ccs: #e5b817;
+  --college-cea: #78838d;
+  --college-chs: #9351c6;
+  --college-ctde: #367ad4;
+  --college-cthbm: #278756;
+  --font-display: "Barlow Condensed", Impact, sans-serif;
+  --font-body: "Inter Variable", Inter, system-ui, sans-serif;
+  --font-data: "JetBrains Mono Variable", monospace;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --ink: var(--color-ink);
+  --muted: var(--color-muted);
+  --line: var(--color-border);
+  --paper: var(--color-subtle);
+  --accent: var(--color-accent-text);
+  --accent-soft: var(--color-soft);
+  --navy: var(--color-scoreboard);
+  --radius: var(--radius-panel);
+  --public-bg: var(--color-bg);
+  --public-subtle: var(--color-subtle);
+  --public-text: var(--color-ink);
+  --public-muted: var(--color-muted);
+  --public-border: var(--color-border);
+  --public-accent: var(--color-accent);
+  --public-accent-text: var(--color-accent-text);
+  --public-soft: var(--color-soft);
+  --public-success: var(--color-success);
+  --public-warning: var(--color-warning);
+  --public-error: var(--color-error);
+  --public-scroll: var(--color-scroll);
+  --public-scroll-hover: var(--color-scroll-hover);
+}
+
+/* Light tokens above also own printing. Screen defaults to dark even without JS. */
+@media screen {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-canvas: #171c24;
+    --color-public-canvas: #171c24;
+    --color-bg: #202731;
+    --color-subtle: #171c24;
+    --color-raised: #293340;
+    --color-control-bg: #293340;
+    --color-dialog-bg: #293340;
+    --color-ink: #f2f4f7;
+    --color-muted: #bac3cf;
+    --color-border: #465365;
+    --color-control-border: #718196;
+    --color-selected-border: #ffab7d;
+    --color-accent: #ff8a50;
+    --color-accent-text: #ffab7d;
+    --color-accent-hover: #ff9e6c;
+    --color-soft: #3d2d26;
+    --color-scoreboard: #111820;
+    --color-on-dark: #f2f4f7;
+    --color-on-scoreboard: #f2f4f7;
+    --color-on-primary: #25180f;
+    --color-on-danger: #25180f;
+    --color-danger-action: #ffaba2;
+    --color-focus: #ff8a50;
+    --color-crest-plate: #eef0f3;
+    --color-sidebar-muted: #c2cbd7;
+    --color-success: #88d4a7;
+    --color-warning: #f1ca79;
+    --color-error: #ffaba2;
+    --color-success-soft: #203a2d;
+    --color-warning-soft: #3b3223;
+    --color-danger-soft: #412a2c;
+    --color-info: #b4ccf2;
+    --color-info-soft: #26364b;
+    --color-scroll: #8291a5;
+    --color-scroll-hover: #bac3cf;
+    --color-gold: #edc466;
+    --color-silver: #c0ccda;
+    --color-bronze: #e7b291;
+    --color-medal-gold-bg: #3d3422;
+    --color-medal-gold-text: #edc466;
+    --color-medal-silver-bg: #303947;
+    --color-medal-silver-text: #c0ccda;
+    --color-medal-bronze-bg: #3c2e29;
+    --color-medal-bronze-text: #e7b291;
+  }
+}
+
+html {
+  scroll-padding-top: 112px;
+}
+body {
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+::selection {
+  color: var(--color-on-primary);
+  background: var(--color-accent-text);
+}
+.header-tools,
+.auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+.header-tools {
+  margin-left: auto;
+}
+.auth-header {
+  width: 100%;
+  flex-wrap: wrap;
+}
+:is(.public-app, .staff-app) button.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 96px;
+  min-width: 96px;
+  min-height: 44px;
+  padding: 8px 12px;
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--color-ink);
+  background: var(--color-control-bg);
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-control);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+:is(.public-app, .staff-app) button.theme-toggle:hover {
+  background: var(--color-soft);
+  border-color: var(--color-accent-text);
+}
+:is(.public-app, .staff-app) button.theme-toggle:active {
+  background: var(--color-raised);
+}
+:is(.public-app, .staff-app) button.theme-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke-width: 1.75;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scroll) var(--color-subtle);
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--color-subtle);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-scroll);
+  border-radius: var(--radius-control);
+}
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  background: var(--color-scroll-hover);
+}
+.public-app :is(a, button, input, select, summary, [tabindex]) {
+  scroll-margin-top: calc(var(--leader-height, 96px) + 16px);
+}
+.numeric,
+time,
+input[type="number"],
+input[type="time"],
+input[type="date"] {
+  font-variant-numeric: tabular-nums;
+}
+.numeric {
+  font-family: var(--font-data);
+}
+.college-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  vertical-align: middle;
+}
+.college-crest {
+  display: inline-block;
+  flex-shrink: 0;
+  object-fit: contain;
+  background: var(--color-crest-plate);
+  border-radius: 4px;
+}
+.college-identity-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.college-identity-code {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+.college-identity-name,
+.college-identity-mascot {
+  display: block;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.college-identity--banner {
+  gap: 16px;
+}
+.college-identity--banner .college-identity-code {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+}
+.college-identity--participant {
+  gap: 12px;
+}
+.brand .brand-logo {
+  display: block;
+  width: 48px;
+  height: auto;
+  object-fit: contain;
+  background: var(--color-brand-plate);
+  border-radius: var(--radius-control);
+}
+.brand > span {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.brand small {
+  font-family: var(--font-body);
+}
+@media (max-width: 767px) {
+  .public-app .header-tools .event-date {
+    display: none;
+  }
+  .auth-header {
+    gap: 8px;
+  }
+}
+@media print {
+  .theme-toggle {
+    display: none !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: ButtonText;
+  }
+  *::-webkit-scrollbar-track {
+    background: Canvas;
+  }
+}

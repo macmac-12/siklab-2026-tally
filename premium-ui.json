@@ -1,0 +1,37 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": [
+    "src/components/public",
+    "src/components/staff",
+    "src/components/shared",
+    "src/app/theme.css",
+    "src/app/globals.css",
+    "src/app/public.css",
+    "src/app/staff.css"
+  ],
+  "locale": "en-PH",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": [
+    "Select/Listbox",
+    "Date",
+    "Form",
+    "Scrollbar",
+    "Toast",
+    "CRUD"
+  ],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Date": "native"
+  },
+  "requiredCommands": ["typecheck", "unit", "build", "e2e"],
+  "commands": {
+    "typecheck": "npm run typecheck",
+    "unit": "npm test",
+    "build": "npm run build",
+    "e2e": "python scripts/verify-broadcast.py && python scripts/verify-browser.py && python scripts/verify-theme.py"
+  },
+  "evidence": {
+    "crudFullFlow": "scripts/verify-browser.py",
+    "failurePaths": "tests/workflow.test.ts"
+  }
+}

@@ -1,5 +1,7 @@
 import { Pool, type PoolClient } from "pg";
 import { createHash, randomUUID } from "node:crypto";
+import { attachDatabasePool } from "@vercel/functions";
+import { invalidatePublicData } from "./cache";
 import type { Snapshot, User, Revision, Schedule } from "../model";
 export class AppError extends Error {
   constructor(
@@ -20,11 +22,22 @@ export function pool() {
       "Database configuration is missing. Run the local setup.",
     );
   if (!globalPg.siklabPool) {
+    const max = Number(process.env.DATABASE_POOL_MAX || (process.env.VERCEL ? 1 : 12));
+    if (!Number.isInteger(max) || max < 1 || max > 12)
+      throw new AppError(503, "Invalid database pool configuration.");
+    const connection = new URL(process.env.DATABASE_URL);
+    if (process.env.VERCEL && (connection.port !== "6543" || !connection.hostname.endsWith(".pooler.supabase.com")))
+      throw new AppError(503, "Hosted database requires the transaction pooler.");
     globalPg.siklabPool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 12,
+      max,
       connectionTimeoutMillis: 3000,
-      idleTimeoutMillis: 30000,
+      idleTimeoutMillis: 10000,
+      ...(process.env.VERCEL || process.env.DATABASE_SSL_CA ? {ssl: {rejectUnauthorized: true, ...(process.env.DATABASE_SSL_CA ? {ca: process.env.DATABASE_SSL_CA} : {})}} : {}),
+    });
+    if (process.env.VERCEL) attachDatabasePool(globalPg.siklabPool);
+    globalPg.siklabPool.on("connect", client => {
+      client.on("error", error => console.error("Database connection interrupted:", error.message));
     });
     globalPg.siklabPool.on("error", (error) =>
       console.error("Database pool error:", error.message),
@@ -37,8 +50,10 @@ export const uid = () => randomUUID();
 export async function transaction<T>(
   fn: (db: PoolClient) => Promise<T>,
   write = false,
+  invalidatePublic = true,
 ): Promise<T> {
   const db = await pool().connect();
+  let result: T;
   try {
     await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
     if (write) {
@@ -47,20 +62,21 @@ export async function transaction<T>(
       await db.query("BEGIN");
       await db.query("SELECT pg_advisory_xact_lock(2026, 1)");
     }
-    const result = await fn(db);
+    result = await fn(db);
     if (write)
       await db.query(
         "UPDATE system_state SET revision=revision+1,updated_at=now() WHERE id=true",
       );
     await db.query("COMMIT");
-    if (write) clearPublicCache();
-    return result;
   } catch (e) {
     await db.query("ROLLBACK");
     throw e;
   } finally {
     db.release();
   }
+  // Cache availability must never turn a committed write into a reported failure.
+  if (write && invalidatePublic) await invalidatePublicData();
+  return result;
 }
 export async function userById(
   db: PoolClient,
@@ -168,15 +184,4 @@ export async function audit(
       reason,
     ],
   );
-}
-// Public cache contains only approved projections. Writes invalidate it after commit.
-let cache: { expires: number; value: unknown } | undefined;
-export function getPublicCache<T>(): T | undefined {
-  return cache && cache.expires > Date.now() ? (cache.value as T) : undefined;
-}
-export function setPublicCache(value: unknown) {
-  cache = { expires: Date.now() + 4000, value };
-}
-export function clearPublicCache() {
-  cache = undefined;
 }

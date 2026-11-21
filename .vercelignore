@@ -1,0 +1,14 @@
+.env*
+!.env.example
+output/
+data/
+docs/
+tests/
+scripts/
+supabase/
+__pycache__/
+*.pyc
+*.tsbuildinfo
+.git/
+.next/
+.next-dev/

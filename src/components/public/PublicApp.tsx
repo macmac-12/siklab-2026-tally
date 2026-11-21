@@ -1,20 +1,32 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
 import Brand from "../shared/Brand";
-import { COLLEGES, categoryLabel } from "@/lib/catalog";
+import ThemeToggle from "../shared/ThemeToggle";
+import {
+  CalendarDays,
+  Flame,
+  RefreshCw,
+  SlidersHorizontal,
+} from "lucide-react";
+import { collegeBrand, displayCode } from "@/lib/branding";
+import { CATEGORIES, COLLEGES, categoryLabel } from "@/lib/catalog";
 import { usePublicData } from "./usePublicData";
 import {
   Standings,
-  ScheduleCard,
+  LeaderStrip,
   AwardBreakdown,
-  Empty,
   LeagueTables,
   SubpointTables,
 } from "./ScoreViews";
-import { csv, download, todayManila, timeLabel } from "../shared/format";
-import { overall } from "@/lib/scoring";
+import {
+  Agenda,
+  CollegeBanners,
+  CollegeResultRow,
+  StudentEmpty,
+} from "./StudentViews";
+import BracketView from "./BracketView";
+import { dateLabel, timeLabel } from "../shared/format";
 export default function PublicApp({
   view = "home",
 }: {
@@ -23,104 +35,84 @@ export default function PublicApp({
   const params = useSearchParams(),
     router = useRouter(),
     pathname = usePathname();
-  const query = new URLSearchParams(params.toString());
-  if (view === "results") query.set("view", "results");
-  if (view === "home" || view === "display") {
-    query.set("view", "overview");
-    query.set("limit", "12");
-  }
-  const { data, error, checked, refresh } = usePublicData(query.toString());
-  const [notice, setNotice] = useState("");
   const college = params.get("college") || "",
     category = params.get("category") || "";
+  const overview = view === "home" || view === "display";
+  const query = new URLSearchParams(params.toString());
+  query.set(
+    "view",
+    overview
+      ? "overview"
+      : view === "schedules" && category && params.get("mode") === "bracket"
+        ? "brackets"
+        : view,
+  );
+  if (view === "results") query.set("limit", "20");
+  query.delete("round");
+  query.delete("bracket");
+  if (query.get("view") === "brackets")
+    for (const key of ["college", "date", "venue", "status"]) query.delete(key);
+  const { data, metadata, error, checked, refresh, refreshing } = usePublicData(
+    query.toString(),
+  );
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params.toString());
     if (value) next.set(key, value);
     else next.delete(key);
-    if (key !== "page") next.delete("page");
-    router.replace(`${pathname}?${next}`, { scroll: false });
-  }
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(location.href);
-      setNotice("Link copied.");
-    } catch {
-      setNotice("Copy the page address to share these filters.");
-    }
-  }
-  function exportCsv() {
-    if (!data) return;
-    const rows: (string | number | null)[][] =
-      view === "standings"
-        ? [
-            ["College", "Official points", "Rank"],
-            ...overall(data.awards.map((a) => a.body)).map((r) => [
-              r.id,
-              r.points,
-              r.rank,
-            ]),
-          ]
-        : [
-            [
-              "Event",
-              "Competition",
-              "Date",
-              "Time (Manila)",
-              "Venue",
-              "Status",
-              "Approved score / placings",
-            ],
-            ...data.schedules.map((s) => {
-              const r = data.results.find((r) => r.scheduleId === s.id);
-              return [
-                categoryLabel(
-                  data.categories.find((c) => c.id === s.categoryId)!,
-                ),
-                s.title,
-                s.date,
-                timeLabel(s.startsAt),
-                s.venue,
-                s.status,
-                r
-                  ? s.kind === "match"
-                    ? `${r.body.scoreA}–${r.body.scoreB}`
-                    : r.body.placings
-                        .map(
-                          (p) =>
-                            `${data.entries.find((e) => e.id === p.entryId)?.label}: ${p.rank || (p.eligible ? "Participation" : "Not eligible")}`,
-                        )
-                        .join("; ")
-                  : "",
-              ];
-            }),
-          ];
-    download(`siklab-${view}.csv`, csv(rows));
+    if (["college", "category", "date", "venue", "status"].includes(key))
+      next.delete("page");
+    if (key === "category")
+      for (const name of ["round", "bracket", "mode"]) next.delete(name);
+    if (key === "bracket") next.delete("round");
+    router.push(`${pathname}?${next}`, { scroll: false });
   }
   const titles = {
-    home: "Every game. Every college.",
-    schedules: "Find your next game.",
-    results: "Results, made official.",
-    standings: "The race for the championship.",
+    home: "Seven teams. One Siklab.",
+    schedules: "Every event. One schedule.",
+    results: "The results are in.",
+    standings: "The championship race.",
     display: "Siklab 2026 · Official standings",
   };
-  const nextGames = data
-    ? data.schedules
-        .filter(
-          (s) =>
-            s.status === "ongoing" ||
-            (s.date >= todayManila() &&
-              ["upcoming", "postponed"].includes(s.status)),
-        )
-        .sort(
-          (a, b) =>
-            Number(b.status === "ongoing") - Number(a.status === "ongoing") ||
-            a.date.localeCompare(b.date) ||
-            (a.startsAt || "z").localeCompare(b.startsAt || "z"),
-        )
-        .slice(0, 4)
-    : [];
+  const selected =
+    data?.brackets.find((b) => b.id === params.get("bracket")) ||
+    data?.brackets[0];
+  const bracketMode =
+    view === "schedules" && selected && params.get("mode") === "bracket";
+  const collegeSelect = (
+    <label>
+      College
+      <select
+        value={college}
+        onChange={(e) => filter("college", e.target.value)}
+      >
+        <option value="">All colleges</option>
+        {COLLEGES.map((c) => (
+          <option key={c.id} value={c.id}>
+            {displayCode(c.id)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  const summaryData = data ? { ...data, ...data.summaries } : null;
+  const today =
+    data?.today ||
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  const tomorrowDate = new Date(`${today}T12:00:00+08:00`);
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+  const tomorrow = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(tomorrowDate);
   return (
-    <div className={view === "display" ? "display-mode" : ""}>
+    <div className={`public-app ${view === "display" ? "display-mode" : ""}`}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
@@ -147,158 +139,186 @@ export default function PublicApp({
               </Link>
             ))}
           </nav>
-          <span className="event-date">NOV 23–28</span>
+          <div className="header-tools">
+            <span className="event-date">
+              <CalendarDays size={14} aria-hidden="true" /> NOV 23–28, 2026
+            </span>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
+      <LeaderStrip data={data} error={error} />
       <main id="main" className="shell">
         <div className="page-intro">
           <div>
             <span className="eyebrow accent">
-              SIKLAB 2026 · CSPC INTRAMURALS
+              <Flame size={14} aria-hidden="true" /> SIKLAB 2026 · CSPC
+              INTRAMURALS
             </span>
             <h1>{titles[view]}</h1>
             <p>
-              {view === "home"
-                ? "Follow the action. Check the schedule. See where your college stands."
+              {view === "results"
+                ? "Reviewed results, shared across every participating college."
                 : view === "standings"
-                  ? "Official college points, awarded from approved final standings."
-                  : view === "results"
-                    ? "Only reviewed and approved results appear here."
-                    : "All times are Philippine Standard Time (Asia/Manila)."}
+                  ? "Official college points from approved championship standings."
+                  : "Sports, culture, and campus pride. All times are Philippine Standard Time (Asia/Manila)."}
             </p>
           </div>
-          <div className="freshness">
-            <span className={`connection-dot ${error ? "stale" : ""}`} />
-            {checked ? `Checked ${timeLabel(checked)}` : "Connecting…"}
+          <div className="public-refresh-controls">
+            <div className="freshness" role="status" aria-live="polite">
+              <span className={`connection-dot ${error ? "stale" : ""}`} />
+              {error
+                ? checked
+                  ? `Stale · Last checked ${timeLabel(checked)}`
+                  : "Not connected"
+                : checked
+                  ? `Checked ${timeLabel(checked)}`
+                  : "Connecting…"}
+            </div>
+            <div className="public-refresh-action">
+              <button
+                type="button"
+                aria-label="Refresh event information"
+                aria-busy={refreshing}
+                disabled={refreshing}
+                onClick={refresh}
+              >
+                <RefreshCw size={16} aria-hidden="true" /> Refresh
+              </button>
+              <span>Auto-refresh every 5 minutes</span>
+            </div>
           </div>
         </div>
         {error ? (
           <div className="alert" role="alert">
-            {error} <button onClick={refresh}>Try again</button>
+            {error}{" "}
+            <button disabled={refreshing} onClick={refresh}>
+              Try again
+            </button>
           </div>
         ) : null}
-        {!data ? (
-          <div className="loading" role="status">
-            Loading the latest event information…
+        {!overview && !(view === "results" && !college) ? (
+          <div className="filter-bar" aria-label="Competition filters">
+            <span className="filter-label">
+              <SlidersHorizontal size={16} aria-hidden="true" /> Find your event
+            </span>
+            {collegeSelect}
+            <label>
+              Event
+              <select
+                value={category}
+                onChange={(e) => filter("category", e.target.value)}
+              >
+                <option value="">All events</option>
+                {(metadata?.categories || CATEGORIES).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {categoryLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {view !== "standings" ? (
+              <>
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={params.get("date") || ""}
+                    onChange={(e) => filter("date", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Venue
+                  <select
+                    value={params.get("venue") || ""}
+                    onChange={(e) => filter("venue", e.target.value)}
+                  >
+                    <option value="">All venues</option>
+                    {(
+                      metadata?.venues ||
+                      (params.get("venue") ? [params.get("venue")!] : [])
+                    ).map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+                {view === "schedules" ? (
+                  <label>
+                    Status
+                    <select
+                      value={params.get("status") || ""}
+                      onChange={(e) => filter("status", e.target.value)}
+                    >
+                      <option value="">All statuses</option>
+                      {[
+                        "upcoming",
+                        "ongoing",
+                        "completed",
+                        "postponed",
+                        "cancelled",
+                      ].map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </>
+            ) : null}
+            <button className="quiet" onClick={() => router.push(pathname)}>
+              Clear filters
+            </button>
           </div>
+        ) : null}
+
+        {!data ? (
+          !error ? (
+            <div className="loading" role="status">
+              Loading the latest event information…
+            </div>
+          ) : null
         ) : (
           <>
-            {view !== "home" && view !== "display" ? (
-              <div className="filter-bar no-print">
-                <label>
-                  College
-                  <select
-                    value={college}
-                    onChange={(e) => filter("college", e.target.value)}
-                  >
-                    <option value="">All colleges</option>
-                    {COLLEGES.map((c) => (
-                      <option key={c.id}>{c.id}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Event
-                  <select
-                    value={category}
-                    onChange={(e) => filter("category", e.target.value)}
-                  >
-                    <option value="">All events</option>
-                    {data.categories.map((c) => (
-                      <option value={c.id} key={c.id}>
-                        {categoryLabel(c)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {view !== "standings" ? (
-                  <>
-                    <label>
-                      Date
-                      <input
-                        type="date"
-                        value={params.get("date") || ""}
-                        onChange={(e) => filter("date", e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Venue
-                      <select
-                        value={params.get("venue") || ""}
-                        onChange={(e) => filter("venue", e.target.value)}
-                      >
-                        <option value="">All venues</option>
-                        {data.venues.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {view === "schedules" ? (
-                      <label>
-                        Status
-                        <select
-                          value={params.get("status") || ""}
-                          onChange={(e) => filter("status", e.target.value)}
-                        >
-                          <option value="">All statuses</option>
-                          {[
-                            "upcoming",
-                            "ongoing",
-                            "completed",
-                            "postponed",
-                            "cancelled",
-                          ].map((s) => (
-                            <option key={s}>{s}</option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                  </>
-                ) : null}
-                <button
-                  className="quiet"
-                  onClick={() => router.replace(pathname)}
-                >
-                  Clear
-                </button>
-              </div>
-            ) : null}
-            {view === "home" || view === "display" ? (
+            {overview ? (
               <div className="overview-grid">
                 <Standings data={data} />
-                <section>
-                  <div className="section-head outside">
+                <section className="daily-timeline">
+                  <div className="section-head">
                     <div>
                       <span className="eyebrow">AROUND THE CAMPUS</span>
-                      <h2>Now & next</h2>
+                      <h2>
+                        {data.agendaDate === data.today
+                          ? "Today’s timeline"
+                          : data.agendaDate
+                            ? `Next scheduled day · ${dateLabel(data.agendaDate)}`
+                            : "Daily timeline"}
+                      </h2>
                     </div>
-                    <Link
-                      className="text-link"
-                      href={`/schedules?date=${todayManila()}`}
-                    >
-                      Today ↗
+                  </div>
+                  <div className="timeline-filter">
+                    {collegeSelect}
+                    <span className="muted">
+                      Schedule filter · tally includes all teams
+                    </span>
+                    <Link href="/schedules" className="text-link">
+                      All schedules
                     </Link>
                   </div>
-                  <div className="game-list">
-                    {nextGames.length ? (
-                      nextGames.map((s) => (
-                        <ScheduleCard key={s.id} schedule={s} data={data} />
-                      ))
-                    ) : (
-                      <div className="panel">
-                        <Empty
-                          title="The next game is on its way"
-                          text="Confirmed schedules will appear here as game heads publish them."
-                        />
-                        <Link
-                          className="text-link empty-link"
-                          href="/schedules"
-                        >
-                          Browse all schedules ↗
-                        </Link>
-                      </div>
-                    )}
-                  </div>
+                  {data.schedules.length ? (
+                    <Agenda data={data} />
+                  ) : (
+                    <StudentEmpty
+                      title={
+                        data.agendaDate
+                          ? "No competitions for this college that day"
+                          : "No upcoming competitions scheduled"
+                      }
+                      text={
+                        data.agendaDate
+                          ? "Choose all colleges or browse the full schedule."
+                          : "Confirmed schedules will appear here when published."
+                      }
+                    />
+                  )}
                 </section>
               </div>
             ) : null}
@@ -312,106 +332,191 @@ export default function PublicApp({
                 />
                 <p className="muted">
                   Cheerdance and pageant points await confirmed official rules.
-                  Approved results can still appear on the results page.
                 </p>
-                <Link className="text-link no-print" href="/display">
-                  Open display view ↗
+                <Link className="text-link" href="/display">
+                  Open display view
                 </Link>
               </div>
             ) : null}
-            {view === "schedules" || view === "results" ? (
+            {view === "schedules" ? (
               <>
-                <div className="section-head">
-                  <h2>
-                    {view === "results" ? "Approved results" : "Event schedule"}
-                  </h2>
-                  <span className="count">
-                    {data.total} competition{data.total === 1 ? "" : "s"}
-                  </span>
+                <div className="schedule-shortcuts">
+                  <div
+                    className="shortcut-group"
+                    role="group"
+                    aria-label="Schedule date shortcuts"
+                  >
+                    {[
+                      ["", "All dates"],
+                      [today, "Today"],
+                      [tomorrow, "Tomorrow"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={label}
+                        aria-pressed={(params.get("date") || "") === value}
+                        onClick={() => filter("date", value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="shortcut-group"
+                    role="group"
+                    aria-label="Schedule status shortcuts"
+                  >
+                    {[
+                      ["", "All statuses"],
+                      ["ongoing", "Ongoing"],
+                      ["completed", "Completed"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={label}
+                        aria-pressed={(params.get("status") || "") === value}
+                        onClick={() => filter("status", value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="game-grid">
-                  {data.schedules.map((s) => (
-                    <ScheduleCard key={s.id} schedule={s} data={data} />
-                  ))}
-                </div>
-                {!data.schedules.length ? (
-                  <section className="panel">
-                    <Empty
-                      title={
-                        view === "results"
-                          ? "No approved results yet"
-                          : "No games found"
-                      }
-                      text="Try another filter or check back when more event information is published."
-                    />
-                  </section>
-                ) : null}
-                {data.total > data.limit ? (
-                  <div className="pagination no-print">
+                {selected ? (
+                  <div className="view-controls">
                     <button
-                      disabled={data.page === 1}
-                      onClick={() => filter("page", String(data.page - 1))}
+                      aria-pressed={!!bracketMode}
+                      onClick={() => filter("mode", "bracket")}
                     >
-                      Previous
+                      Tournament bracket
                     </button>
-                    <span>
-                      Page {data.page} of {Math.ceil(data.total / data.limit)}
-                    </span>
                     <button
-                      disabled={data.page * data.limit >= data.total}
-                      onClick={() => filter("page", String(data.page + 1))}
+                      aria-pressed={!bracketMode}
+                      onClick={() => filter("mode", "list")}
                     >
-                      Next
+                      Schedule cards
                     </button>
+                    {data.brackets.length > 1 ? (
+                      <label>
+                        Bracket
+                        <select
+                          value={selected.id}
+                          onChange={(e) => filter("bracket", e.target.value)}
+                        >
+                          {data.brackets.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.bracket.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                   </div>
                 ) : null}
-                {view === "results" &&
-                !college &&
-                !params.get("date") &&
-                !params.get("venue") ? (
+                {bracketMode && selected ? (
+                  <BracketView
+                    item={selected}
+                    data={data}
+                    round={params.get("round") || ""}
+                    onRound={(id) => filter("round", id)}
+                    filters={new URLSearchParams(params.toString())}
+                  />
+                ) : (
                   <>
-                    <LeagueTables data={data} />
-                    <SubpointTables data={data} />
+                    <div className="section-head">
+                      <h2>
+                        {category ? "Event schedule" : "Across every arena"}
+                      </h2>
+                      <span className="count">{data.total} competitions</span>
+                    </div>
+                    {category && !selected ? (
+                      <p className="muted">
+                        No published bracket for this event. Follow its schedule
+                        below.
+                      </p>
+                    ) : null}
+                    {data.schedules.length ? (
+                      <Agenda data={data} />
+                    ) : (
+                      <StudentEmpty
+                        title="No competitions match these filters"
+                        text="Clear a filter or browse the full schedule."
+                      />
+                    )}
                   </>
+                )}
+              </>
+            ) : null}
+            {view === "results" ? (
+              <>
+                {!college ? (
+                  <CollegeBanners data={data} />
+                ) : (
+                  <section>
+                    <div className="section-head">
+                      <h2>
+                        {collegeBrand(college)?.name || displayCode(college)}
+                      </h2>
+                      <Link className="text-link" href="/results">
+                        All colleges
+                      </Link>
+                    </div>
+                    {data.schedules.map((s) => (
+                      <CollegeResultRow
+                        key={s.id}
+                        schedule={s}
+                        data={data}
+                        college={college}
+                      />
+                    ))}
+                    {!data.schedules.length ? (
+                      <StudentEmpty
+                        title="No approved results found"
+                        text="Try another filter or follow this college’s upcoming competitions."
+                        href={`/schedules?college=${college}`}
+                      />
+                    ) : null}
+                  </section>
+                )}
+                {summaryData ? (
+                  <details className="secondary-summary">
+                    <summary>Tournament tables & discipline sub-points</summary>
+                    <p className="muted">
+                      Match scores and sub-points are separate from official
+                      championship points. These summaries include complete
+                      event data.
+                    </p>
+                    <LeagueTables data={summaryData} />
+                    <SubpointTables data={summaryData} />
+                  </details>
                 ) : null}
               </>
             ) : null}
-            {view !== "home" && view !== "display" ? (
-              <div className="tools no-print">
-                <button onClick={share}>Copy link</button>
-                <button onClick={() => window.print()}>Print this view</button>
-                <button onClick={exportCsv}>Export this page</button>
-                <span role="status">{notice}</span>
-              </div>
+            {!bracketMode &&
+            (view === "schedules" || (view === "results" && college)) &&
+            data.total > data.limit ? (
+              <nav className="pagination" aria-label="Pagination">
+                <button
+                  disabled={data.page === 1}
+                  onClick={() => filter("page", String(data.page - 1))}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {data.page} of {Math.ceil(data.total / data.limit)} ·{" "}
+                  {data.total} competitions
+                </span>
+                <button
+                  disabled={data.page * data.limit >= data.total}
+                  onClick={() => filter("page", String(data.page + 1))}
+                >
+                  Next
+                </button>
+              </nav>
             ) : null}
-            <p className="print-only">
-              View: {view} · College: {college || "All"} · Event:{" "}
-              {category
-                ? categoryLabel(
-                    data.categories.find((c) => c.id === category) || {
-                      event: "Unknown event",
-                      name: "",
-                    },
-                  )
-                : "All"}{" "}
-              · Date: {params.get("date") || "All"} · Last checked:{" "}
-              {checked
-                ? new Intl.DateTimeFormat("en-PH", {
-                    timeZone: "Asia/Manila",
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  }).format(new Date(checked))
-                : "—"}{" "}
-              (Manila) · Page {data.page}
-            </p>
           </>
         )}
       </main>
       <footer className="shell site-footer">
-        <span>
-          SIKLAB 2026 <span className="footer-dot">/</span> One campus. Seven
-          colleges.
-        </span>
+        <span>SIKLAB 2026 / Seven teams. One Siklab.</span>
         <span>Official results · Fair play · College pride</span>
       </footer>
     </div>

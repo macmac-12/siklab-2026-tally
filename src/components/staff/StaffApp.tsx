@@ -1,9 +1,28 @@
 "use client";
+import StaffForm from "./StaffForm";
+import BracketEditor from "./BracketEditor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  CalendarDays,
+  ClipboardCheck,
+  ExternalLink,
+  Gamepad2,
+  History,
+  LayoutGrid,
+  LockKeyhole,
+  Music2,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  Trophy,
+  Users,
+} from "lucide-react";
+import CollegeIdentity from "../shared/CollegeIdentity";
 import type { StaffSnapshot, User } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import Brand from "../shared/Brand";
+import ThemeToggle from "../shared/ThemeToggle";
 import { dateLabel, timeLabel } from "../shared/format";
 import { api } from "./client";
 import ScheduleEditor from "./ScheduleEditor";
@@ -15,6 +34,23 @@ import {
   EntryEditor,
   RuleEditor,
 } from "./AdminPanels";
+const navigationIcons: Record<string, typeof Trophy> = {
+  events: LayoutGrid,
+  schedules: CalendarDays,
+  awards: Trophy,
+  review: ClipboardCheck,
+  accounts: Users,
+  rules: Settings2,
+  history: History,
+  backup: ShieldCheck,
+  password: LockKeyhole,
+};
+const eventIcons = {
+  Sports: Trophy,
+  Culture: Music2,
+  Special: ShieldCheck,
+  "E-games": Gamepad2,
+};
 export default function StaffApp() {
   const [state, setState] = useState<StaffSnapshot | null>(null),
     [resetUser, setResetUser] = useState<User | null>(null),
@@ -27,6 +63,7 @@ export default function StaffApp() {
       type: "schedule" | "result";
       id?: string;
     } | null>(null);
+  const [bracketEditor, setBracketEditor] = useState(false);
   const keys = useRef(new Map<string, string>());
   const load = useCallback(async () => {
     const s = await api<StaffSnapshot & { resetRequired?: boolean }>(
@@ -66,63 +103,68 @@ export default function StaffApp() {
   }
   if (resetUser)
     return (
-      <main className="shell narrow">
-        <Brand staff />
-        <section className="panel editor">
-          <h1>Set your own password</h1>
-          <p>
-            Your administrator provided a temporary password. Change it before
-            managing events.
-          </p>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setBusy(true);
-              const f = new FormData(e.currentTarget);
-              try {
-                await api("/api/auth/password", {
-                  currentPassword: f.get("currentPassword"),
-                  newPassword: f.get("newPassword"),
-                });
-                location.assign("/staff/login");
-              } catch (err) {
-                setError((err as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <label>
-              Temporary password
-              <input
-                name="currentPassword"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            <label>
-              New password
-              <input
-                name="newPassword"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={72}
-                required
-              />
-            </label>
-            {error ? (
-              <p role="alert" className="alert">
-                {error}
-              </p>
-            ) : null}
-            <button disabled={busy} className="primary">
-              Change password and sign in again
-            </button>
-          </form>
-        </section>
-      </main>
+      <div className="staff-app auth-app">
+        <main className="shell narrow">
+          <div className="auth-header">
+            <Brand staff />
+            <ThemeToggle />
+          </div>
+          <section className="panel editor">
+            <h1>Set your own password</h1>
+            <p>
+              Your administrator provided a temporary password. Change it before
+              managing events.
+            </p>
+            <StaffForm
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                const f = new FormData(e.currentTarget);
+                try {
+                  await api("/api/auth/password", {
+                    currentPassword: f.get("currentPassword"),
+                    newPassword: f.get("newPassword"),
+                  });
+                  location.assign("/staff/login");
+                } catch (err) {
+                  setError((err as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <label>
+                Temporary password
+                <input
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  name="newPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={72}
+                  required
+                />
+              </label>
+              {error ? (
+                <p role="alert" className="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button disabled={busy} className="primary">
+                Change password and sign in again
+              </button>
+            </StaffForm>
+          </section>
+        </main>
+      </div>
     );
   const admin = !!state && state.user.role !== "officer";
   const schedules =
@@ -146,7 +188,7 @@ export default function StaffApp() {
     ["password", "My password"],
   ];
   return (
-    <>
+    <div className="staff-app">
       <a className="skip-link" href="#workspace">
         Skip to workspace
       </a>
@@ -156,8 +198,9 @@ export default function StaffApp() {
           <div className="staff-identity">
             <span>{state?.user.name || "Loading…"}</span>
             <Link href="/" target="_blank">
-              Public site ↗
+              Public site <ExternalLink size={14} aria-hidden="true" />
             </Link>
+            <ThemeToggle />
             <button
               onClick={async () => {
                 try {
@@ -175,25 +218,35 @@ export default function StaffApp() {
       </header>
       <main className="shell workspace" id="workspace">
         <aside className="staff-nav" aria-label="Workspace navigation">
-          {tabs.map(([id, label]) => (
-            <button
-              key={id}
-              aria-current={tab === id ? "page" : undefined}
-              onClick={() => {
-                setTab(id);
-                setEditor(null);
-                setMessage("");
-                setError("");
-              }}
-            >
-              {label}
-              {id === "review" && state ? (
-                <span className="nav-count">
-                  {state.revisions.filter((r) => r.status === "pending").length}
+          <span className="staff-nav-label">Workspace</span>
+          {tabs.map(([id, label]) => {
+            const Icon = navigationIcons[id];
+            return (
+              <button
+                key={id}
+                aria-current={tab === id ? "page" : undefined}
+                onClick={() => {
+                  setTab(id);
+                  setEditor(null);
+                  setMessage("");
+                  setError("");
+                }}
+              >
+                <span className="staff-nav-item">
+                  <Icon size={18} aria-hidden="true" />
+                  {label}
                 </span>
-              ) : null}
-            </button>
-          ))}
+                {id === "review" && state ? (
+                  <span className="nav-count">
+                    {
+                      state.revisions.filter((r) => r.status === "pending")
+                        .length
+                    }
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </aside>
         <div className="workspace-content">
           <div className="section-head">
@@ -209,7 +262,7 @@ export default function StaffApp() {
                   .catch((e) => setError(e.message));
               }}
             >
-              Refresh
+              <RefreshCw size={16} aria-hidden="true" /> Refresh
             </button>
           </div>
           {error ? (
@@ -255,6 +308,7 @@ export default function StaffApp() {
                       const list = state.schedules.filter(
                         (s) => s.categoryId === c.id,
                       );
+                      const EventIcon = eventIcons[c.group];
                       return (
                         <button
                           className="event-card"
@@ -264,6 +318,9 @@ export default function StaffApp() {
                             setTab("schedules");
                           }}
                         >
+                          <span className="event-icon">
+                            <EventIcon size={20} aria-hidden="true" />
+                          </span>
                           <span className="eyebrow">{c.group}</span>
                           <h3>{c.event}</h3>
                           <p>{c.name}</p>
@@ -276,9 +333,6 @@ export default function StaffApp() {
                               Point rule awaiting confirmation
                             </span>
                           ) : null}
-                          <span className="event-arrow" aria-hidden="true">
-                            ↗
-                          </span>
                         </button>
                       );
                     })}
@@ -301,9 +355,25 @@ export default function StaffApp() {
                       + Schedule competition
                     </button>
                     <button onClick={() => setTab("awards")}>
-                      Finalize championship →
+                      Finalize championship
                     </button>
                   </div>
+                  <button
+                    disabled={!category || busy}
+                    onClick={() => setBracketEditor(true)}
+                  >
+                    Arrange tournament bracket
+                  </button>
+                  {bracketEditor ? (
+                    <BracketEditor
+                      serverError={error}
+                      state={state}
+                      categoryId={category}
+                      run={run}
+                      busy={busy}
+                      close={() => setBracketEditor(false)}
+                    />
+                  ) : null}
                   <EntryEditor
                     key={category}
                     state={state}
@@ -353,14 +423,20 @@ export default function StaffApp() {
                             {s.status}
                           </span>
                         </div>
-                        <p>
-                          {s.entryIds
-                            .map(
-                              (id) =>
-                                state.entries.find((e) => e.id === id)?.label,
-                            )
-                            .join(" · ")}
-                        </p>
+                        <div className="staff-participants">
+                          {s.entryIds.map((id) => {
+                            const entry = state.entries.find(
+                              (e) => e.id === id,
+                            );
+                            return entry ? (
+                              <CollegeIdentity
+                                key={id}
+                                id={entry.collegeId}
+                                label={entry.label}
+                              />
+                            ) : null;
+                          })}
+                        </div>
                         {latest ? (
                           <p className="small">
                             Result: <strong>{latest.status}</strong>
@@ -458,7 +534,7 @@ export default function StaffApp() {
               {tab === "password" ? (
                 <section className="panel editor">
                   <h2>Change your password</h2>
-                  <form
+                  <StaffForm
                     onSubmit={async (e) => {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
@@ -499,13 +575,13 @@ export default function StaffApp() {
                     <button className="primary" disabled={busy}>
                       Change password and sign out
                     </button>
-                  </form>
+                  </StaffForm>
                 </section>
               ) : null}
             </>
           )}
         </div>
       </main>
-    </>
+    </div>
   );
 }

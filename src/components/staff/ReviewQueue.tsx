@@ -1,7 +1,10 @@
 "use client";
+import StaffForm from "./StaffForm";
 import type { StaffSnapshot, AwardBody, ResultBody } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import type { Run } from "./client";
+import CollegeIdentity from "../shared/CollegeIdentity";
+import { displayEntryLabel } from "@/lib/branding";
 function Summary({
   state,
   body,
@@ -26,7 +29,9 @@ function Summary({
           <tbody>
             {(body as AwardBody).rows.map((r, i) => (
               <tr key={i}>
-                <th>{r.collegeId}</th>
+                <th scope="row">
+                  <CollegeIdentity id={r.collegeId} />
+                </th>
                 <td>
                   {r.rank || (r.eligible ? "Participation" : "Not eligible")}
                 </td>
@@ -51,7 +56,11 @@ function Summary({
         <ul>
           {b.placings.map((p) => (
             <li key={p.entryId}>
-              {state.entries.find((e) => e.id === p.entryId)?.label}:{" "}
+              {(() => {
+                const entry = state.entries.find((e) => e.id === p.entryId);
+                return entry ? displayEntryLabel(entry) : p.entryId;
+              })()}
+              :{" "}
               {p.eligible
                 ? p.rank
                   ? `#${p.rank}`
@@ -110,7 +119,10 @@ export default function ReviewQueue({
             {s ? (
               <p className="muted">
                 {s.entryIds
-                  .map((id) => state.entries.find((e) => e.id === id)?.label)
+                  .map((id) => {
+                    const entry = state.entries.find((e) => e.id === id);
+                    return entry ? displayEntryLabel(entry) : id;
+                  })
                   .join(" · ")}{" "}
                 · {s.stage} · {s.venue}
               </p>
@@ -136,7 +148,7 @@ export default function ReviewQueue({
             {r.kind === "award" && (r.body as AwardBody).ruling ? (
               <p>Official ruling: {(r.body as AwardBody).ruling}</p>
             ) : null}
-            <form
+            <StaffForm
               onSubmit={async (e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
@@ -152,7 +164,11 @@ export default function ReviewQueue({
             >
               <label>
                 Review note (required when rejecting)
-                <textarea name="reason" maxLength={2000} />
+                <textarea
+                  className="resize-none"
+                  name="reason"
+                  maxLength={2000}
+                />
               </label>
               <div className="actions">
                 <button value="reject" disabled={busy}>
@@ -162,7 +178,7 @@ export default function ReviewQueue({
                   Approve and publish
                 </button>
               </div>
-            </form>
+            </StaffForm>
           </article>
         );
       })}

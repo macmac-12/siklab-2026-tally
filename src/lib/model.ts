@@ -101,6 +101,7 @@ export type Snapshot = {
   version: number;
 };
 export type StaffSnapshot = Snapshot & {
+  brackets: import("./brackets").BracketRecord[];
   user: User;
   users: User[];
   audit: Audit[];

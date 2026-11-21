@@ -7,12 +7,18 @@ import { pool, transaction, snapshot, userById } from "../src/lib/server/store";
 import { command } from "../src/lib/server/actions";
 import { todayManila } from "../src/components/shared/format";
 import type { User, Schedule } from "../src/lib/model";
+let cleanupFailedSetup: (() => Promise<void>) | undefined;
 async function main() {
   process.loadEnvFile(".env.local");
   const original = process.env.DATABASE_URL!,
     control = new Pool({ connectionString: original });
   const name = `siklab_rehearsal_${Date.now()}`;
   await control.query(`CREATE DATABASE ${name}`);
+  cleanupFailedSetup = async () => {
+    await pool().end();
+    await control.query(`DROP DATABASE ${name} WITH (FORCE)`);
+    await control.end();
+  };
   const url = new URL(original);
   url.pathname = `/${name}`;
   process.env.DATABASE_URL = url.toString();
@@ -193,6 +199,133 @@ async function main() {
       [id, c.id, schedule],
     );
   }
+  // Connected elimination path, bye and loser lane for student UI rehearsal.
+  const bracketState = await transaction(snapshot);
+  const first = bracketState.schedules.find(
+    (s) => s.categoryId === "basketball-men" && s.kind === "match",
+  )!;
+  const graph = {
+    categoryId: first.categoryId,
+    disciplineId: null,
+    title: "Basketball championship path",
+    lanes: [
+      { id: "main", name: "Winners" },
+      { id: "lower", name: "Losers" },
+    ],
+    rounds: [
+      { id: "opening", laneId: "main", name: "Opening round" },
+      { id: "semi", laneId: "main", name: "Semifinal" },
+      { id: "lower", laneId: "lower", name: "Losers round" },
+      { id: "final", laneId: "main", name: "Grand final" },
+    ],
+    nodes: [
+      {
+        id: "opening",
+        roundId: "opening",
+        label: "Match 1",
+        fixtureId: first.id,
+        slots: first.entryIds.map((entryId) => ({ kind: "entry", entryId })),
+      },
+      {
+        id: "bye",
+        roundId: "opening",
+        label: "Published bye",
+        fixtureId: null,
+        slots: [
+          {
+            kind: "entry",
+            entryId: bracketState.entries.find(
+              (e) => e.categoryId === first.categoryId && e.collegeId === "CEA",
+            )!.id,
+          },
+          { kind: "bye" },
+        ],
+      },
+      {
+        id: "semi",
+        roundId: "semi",
+        label: "Match 2",
+        fixtureId: null,
+        slots: [
+          { kind: "winner", nodeId: "opening" },
+          { kind: "winner", nodeId: "bye" },
+        ],
+      },
+      {
+        id: "lower",
+        roundId: "lower",
+        label: "Match 3",
+        fixtureId: null,
+        slots: [
+          { kind: "loser", nodeId: "opening" },
+          { kind: "loser", nodeId: "semi" },
+        ],
+      },
+      {
+        id: "final",
+        roundId: "final",
+        label: "Grand final",
+        fixtureId: null,
+        slots: [
+          { kind: "winner", nodeId: "semi" },
+          { kind: "winner", nodeId: "lower" },
+        ],
+      },
+    ],
+  };
+  await run({ action: "bracket.save", bracket: graph, publish: true });
+  for (const [categoryId, scoreA, scoreB, outcome] of [
+    ["basketball-men", 12, 10, "normal"],
+    ["chess-men", 0.5, 0.5, "normal"],
+    ["badminton-men", 0, 1, "forfeitA"],
+  ] as const) {
+    const fixture = bracketState.schedules.find(
+      (s) => s.categoryId === categoryId && s.date === date,
+    )!;
+    const result = await run({
+      action: "result.save",
+      scheduleId: fixture.id,
+      body: {
+        scoreA,
+        scoreB,
+        outcome,
+        placings: [],
+        note: "Approved rehearsal match",
+        ruling: outcome === "normal" ? "" : "Official rehearsal forfeit ruling",
+      },
+      submit: true,
+      replacesId: null,
+      baseId: null,
+      reason: "",
+    });
+    await run({
+      action: "review",
+      id: result.id,
+      decision: "approve",
+      reason: "",
+    });
+  }
+  for (const [index, status] of [
+    [1, "postponed"],
+    [2, "cancelled"],
+  ] as const) {
+    const fixture = bracketState.schedules.filter(
+      (s) =>
+        s.date === date &&
+        !["basketball-men", "chess-men", "badminton-men"].includes(
+          s.categoryId,
+        ),
+    )[index];
+    if (fixture)
+      await pool().query(
+        "UPDATE schedules SET data=jsonb_set(jsonb_set(data,'{status}',$2::jsonb),'{reason}',$3::jsonb) WHERE id=$1",
+        [
+          fixture.id,
+          JSON.stringify(status),
+          JSON.stringify("Rehearsal weather advisory"),
+        ],
+      );
+  }
   await mkdir("output/verification", { recursive: true });
   const port = 3110;
   const server = spawn(
@@ -242,7 +375,8 @@ async function main() {
   process.on("SIGTERM", () => void stop());
   process.on("SIGINT", () => void stop());
 }
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(e.message);
+  await cleanupFailedSetup?.();
   process.exitCode = 1;
 });

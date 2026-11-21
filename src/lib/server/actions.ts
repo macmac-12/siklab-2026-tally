@@ -1,3 +1,4 @@
+import { bracketRecords, saveBracket } from "./brackets";
 import bcrypt from "bcryptjs";
 import { isDeepStrictEqual } from "node:util";
 import type { PoolClient } from "pg";
@@ -84,6 +85,8 @@ async function execute(
   passwordHash?: string,
 ): Promise<unknown> {
   switch (command.action) {
+    case "bracket.save":
+      return saveBracket(db, user, state, command);
     case "schedule.save":
       return saveSchedule(db, state, user, command.schedule);
     case "entry.add": {
@@ -430,6 +433,22 @@ async function execute(
     }
   }
 }
+export function commandChangesPublicData(command: Command) {
+  switch (command.action) {
+    case "schedule.save":
+    case "entry.add":
+    case "category.configure":
+    case "discipline.configure":
+      return true;
+    case "bracket.save":
+      // Republishing also changes its public publication timestamp.
+      return command.publish;
+    case "review":
+      return command.decision === "approve";
+    default:
+      return false;
+  }
+}
 export async function command(user: User, input: unknown, key: string) {
   const c = commandSchema.parse(input);
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(key))
@@ -441,30 +460,37 @@ export async function command(user: User, input: unknown, key: string) {
     c.action === "account.save" && c.password
       ? await bcrypt.hash(c.password, 12)
       : undefined;
-  return transaction(async (db) => {
-    const fresh = await userById(db, user.id);
-    if (!fresh?.active) fail("Account is disabled.", 401);
-    if (fresh!.mustReset)
-      fail("Change your temporary password before continuing.", 403);
-    const prior = (
-      await db.query("SELECT * FROM idempotency WHERE actor_id=$1 AND key=$2", [
-        user.id,
-        key,
-      ])
-    ).rows[0];
-    if (prior) {
-      if (prior.request_hash !== requestHash)
-        fail("This request key was already used for a different action.", 409);
-      return prior.response;
-    }
-    const state = await snapshot(db);
-    const result = await execute(db, fresh!, state, c, passwordHash);
-    await db.query(
-      "INSERT INTO idempotency(actor_id,key,request_hash,response) VALUES($1,$2,$3,$4)",
-      [user.id, key, requestHash, JSON.stringify(result)],
-    );
-    return result;
-  }, true);
+  return transaction(
+    async (db) => {
+      const fresh = await userById(db, user.id);
+      if (!fresh?.active) fail("Account is disabled.", 401);
+      if (fresh!.mustReset)
+        fail("Change your temporary password before continuing.", 403);
+      const prior = (
+        await db.query(
+          "SELECT * FROM idempotency WHERE actor_id=$1 AND key=$2",
+          [user.id, key],
+        )
+      ).rows[0];
+      if (prior) {
+        if (prior.request_hash !== requestHash)
+          fail(
+            "This request key was already used for a different action.",
+            409,
+          );
+        return prior.response;
+      }
+      const state = await snapshot(db);
+      const result = await execute(db, fresh!, state, c, passwordHash);
+      await db.query(
+        "INSERT INTO idempotency(actor_id,key,request_hash,response) VALUES($1,$2,$3,$4)",
+        [user.id, key, requestHash, JSON.stringify(result)],
+      );
+      return result;
+    },
+    true,
+    commandChangesPublicData(c),
+  );
 }
 export async function staffState(user: User) {
   return transaction(async (db) => {
@@ -486,6 +512,9 @@ export async function staffState(user: User) {
     ).rows;
     return {
       ...s,
+      brackets: (await bracketRecords(db)).filter((b) =>
+        visible(b.draft.categoryId),
+      ),
       user: fresh,
       users,
       categories: s.categories.filter((c) => visible(c.id)),

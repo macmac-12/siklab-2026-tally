@@ -1,4 +1,5 @@
 "use client";
+import StaffForm from "./StaffForm";
 import { useState } from "react";
 import type {
   StaffSnapshot,
@@ -10,6 +11,15 @@ import type {
 } from "@/lib/model";
 import { categoryLabel, COLLEGES } from "@/lib/catalog";
 import type { Run } from "./client";
+import { displayCode, displayEntryLabel } from "@/lib/branding";
+import CollegeIdentity, { CollegeCrest } from "../shared/CollegeIdentity";
+function tieOrder(value: FormDataEntryValue | null) {
+  return String(value || "")
+    .split(",")
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean)
+    .map((code) => (code === "BC" ? "BUHI" : code));
+}
 export function PlacingsEditor({
   entries,
   rows,
@@ -51,15 +61,15 @@ export function PlacingsEditor({
             return (
               <tr key={en.id}>
                 <th scope="row">
-                  {en.label}
-                  {en.label !== en.collegeId ? (
-                    <small className="college-name">{en.collegeId}</small>
-                  ) : null}
+                  <CollegeIdentity
+                    id={en.collegeId}
+                    label={displayEntryLabel(en)}
+                  />
                 </th>
                 <td>
                   <label className="check">
                     <input
-                      aria-label={`${en.label} eligible participation`}
+                      aria-label={`${displayEntryLabel(en)} eligible participation`}
                       type="checkbox"
                       checked={r.eligible}
                       onChange={(e) =>
@@ -74,7 +84,7 @@ export function PlacingsEditor({
                 </td>
                 <td>
                   <select
-                    aria-label={`${en.label} final place`}
+                    aria-label={`${displayEntryLabel(en)} final place`}
                     value={r.rank || ""}
                     disabled={!r.eligible}
                     onChange={(e) =>
@@ -112,6 +122,7 @@ export function TieFields() {
       <label>
         Official tie / final-standing ruling
         <textarea
+          className="resize-none"
           name="ruling"
           maxLength={2000}
           placeholder="Record the playoff result or committee decision."
@@ -200,7 +211,7 @@ export default function ResultEditor({
           This competition already has a submission awaiting review.
         </p>
       ) : null}
-      <form
+      <StaffForm
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget),
@@ -222,10 +233,7 @@ export default function ResultEditor({
             ...(award
               ? {
                   awardPlacings: awardRows,
-                  awardTieOrder: String(f.get("tieOrder") || "")
-                    .split(",")
-                    .map((s) => s.trim().toUpperCase())
-                    .filter(Boolean),
+                  awardTieOrder: tieOrder(f.get("tieOrder")),
                   awardRuling: f.get("ruling") || "",
                 }
               : {}),
@@ -246,20 +254,28 @@ export default function ResultEditor({
       >
         {s.kind === "match" ? (
           <>
-            <div className="form-grid">
-              {s.entryIds.map((id, i) => (
-                <label key={id}>
-                  {state.entries.find((e) => e.id === id)?.label} score
-                  <input
-                    name={i ? "scoreB" : "scoreA"}
-                    type="number"
-                    min="0"
-                    max="99999"
-                    step={c.event === "Chess" ? "0.5" : "1"}
-                    defaultValue={(i ? old?.scoreB : old?.scoreA) ?? ""}
-                  />
-                </label>
-              ))}
+            <div className="form-grid score-entry-grid">
+              {s.entryIds.map((id, i) => {
+                const entry = state.entries.find((e) => e.id === id);
+                return (
+                  <label key={id}>
+                    <span className="score-entry-label">
+                      {entry ? (
+                        <CollegeCrest id={entry.collegeId} size={36} />
+                      ) : null}
+                      {entry ? displayEntryLabel(entry) : id} score
+                    </span>
+                    <input
+                      name={i ? "scoreB" : "scoreA"}
+                      type="number"
+                      min="0"
+                      max="99999"
+                      step={c.event === "Chess" ? "0.5" : "1"}
+                      defaultValue={(i ? old?.scoreB : old?.scoreA) ?? ""}
+                    />
+                  </label>
+                );
+              })}
             </div>
             <div className="form-grid">
               <label>
@@ -291,6 +307,7 @@ export default function ResultEditor({
         <label>
           Public result note (optional)
           <textarea
+            className="resize-none"
             name="note"
             defaultValue={old?.note || ""}
             maxLength={2000}
@@ -341,7 +358,7 @@ export default function ResultEditor({
             {busy ? "Saving…" : "Submit for review"}
           </button>
         </div>
-      </form>
+      </StaffForm>
     </section>
   );
 }
@@ -399,7 +416,7 @@ export function AwardEditor({
         <div className="success" role="status">
           Championship standings submitted for review.{" "}
           {(pending.body as AwardBody).rows
-            .map((r) => `${r.collegeId}: ${r.points} points`)
+            .map((r) => `${displayCode(r.collegeId)}: ${r.points} points`)
             .join(" · ")}
         </div>
       ) : null}
@@ -416,7 +433,7 @@ export function AwardEditor({
           sub-points. Every active discipline must be resolved or cancelled.
         </p>
       ) : null}
-      <form
+      <StaffForm
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -424,10 +441,7 @@ export function AwardEditor({
             action: "award.submit",
             categoryId,
             placings: rows,
-            tieOrder: String(f.get("tieOrder") || "")
-              .split(",")
-              .map((s) => s.trim().toUpperCase())
-              .filter(Boolean),
+            tieOrder: tieOrder(f.get("tieOrder")),
             ruling: f.get("ruling") || "",
             baseId: award?.id || null,
             reason: f.get("reason") || "",
@@ -456,7 +470,7 @@ export function AwardEditor({
         >
           Submit championship standings
         </button>
-      </form>
+      </StaffForm>
     </section>
   );
 }

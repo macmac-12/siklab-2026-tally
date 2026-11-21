@@ -1,3 +1,9 @@
+> Current appearance acceptance: [Dark mode verification](DARK_MODE_VERIFICATION.md).
+
+> Whole-site broadcast redesign acceptance: [Broadcast UI verification](BROADCAST_UI_VERIFICATION.md).
+
+> Current student UI/bracket acceptance: [Student UI verification](STUDENT_UI_VERIFICATION.md). The phase-4 results below describe the earlier interface.
+
 # Phase 3–4 verification
 
 Verified locally on **14 November 2026 (Asia/Manila)**. No deployment or push was performed. Original audit evidence remains in `docs/evidence/` with its original filenames; Phase 4 evidence uses a `phase4-` prefix.

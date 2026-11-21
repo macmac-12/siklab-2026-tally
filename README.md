@@ -53,7 +53,7 @@ Any administrator can approve a correction. The previous approved result remains
 
 ## Useful workflows
 
-- **Students:** view schedules/results, use shareable filters, inspect championship point breakdowns, print or export the current page. `/display` is a public projector view.
+- **Students:** see the pinned official leaders and full college tally, follow date-grouped competition cards, explore published tournament brackets, browse college result histories, and inspect championship point breakdowns. Filters and round navigation stay in the URL. `/display` is a public projector view.
 - **Game staff:** choose an event, create its schedules, enter results, and revise rejected submissions. Unknown end times are allowed; “follows another competition” supports game succession.
 - **Administrators:** review submissions; manage accounts and assignments; confirm versioned rules and TBA disciplines.
 - **Superadministrator:** download private backups and validate/restore them. Restore requires a preview and the current password, saves a pre-restore recovery copy, and revokes every session.
@@ -86,3 +86,15 @@ The browser rehearsal changes its isolated fixture standings; run it after the l
 The default load test lasts ten minutes with 500 viewers, 18 game heads and 2 reviewers. It checks response times, errors and persisted acknowledgements. `LOAD_SECONDS` allows a shorter diagnostic run; a short run is not the ten-minute acceptance result.
 
 The earlier `npm run audit` and `audit:load` scripts document the inherited API and are archival baseline tools, not tests for the redesigned API. They refuse to launch against the new database architecture. Their reports remain unchanged for comparison.
+
+## Broadcast interface
+
+Public and staff screens share the Siklab broadcast theme in `src/app/theme.css`. Dark is the first-visit default; the header’s Light/Dark toggle remembers a browser-local `siklab-theme` preference and synchronizes open tabs. The light alternative and light print palette remain available. The supplied PNG logos stay unchanged in `docs/logos-design/`; optimized transparent assets live in `public/branding/`. Regenerate them with `python scripts/prepare-branding.py` (ImageMagick 7 required). BC is the visible abbreviation for Buhi Campus; stored `BUHI` identifiers remain compatible.
+
+After building, start the isolated rehearsal server above, then run `python scripts/verify-broadcast.py` for public/staff layout and state coverage, `python scripts/verify-browser.py` for the staff publication lifecycle, and `python scripts/verify-theme.py` for dark/light appearance, contrast and preference behavior. Evidence is written under ignored `output/verification/` and `output/playwright/`; historical reports are retained. `scripts/verify-student.py` forwards to the current broadcast checks.
+
+The current appearance verification is recorded in [Dark mode verification](docs/DARK_MODE_VERIFICATION.md).
+
+## Vercel and Supabase deployment
+
+See [the free-tier deployment guide](docs/DEPLOYMENT.md) for production setup, guarded release, private recovery, quota limits, and event-day checks. Production uses a separate database and credentials; `.env.local` continues to configure local development.
