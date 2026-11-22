@@ -1830,10 +1830,6 @@
 .public-app--results .public-refresh-action {
   gap: 8px;
 }
-.public-app--schedules .public-refresh-action > span,
-.public-app--results .public-refresh-action > span {
-  display: none;
-}
 .public-app--schedules .filter-bar,
 .public-app--results .filter-bar {
   padding: 12px;

@@ -55,7 +55,7 @@ for(const appearance of ['dark','light']) {
  for(const width of [375,768,1440]) {
   await page.setViewportSize({width,height:1000});
   for(const [name,path,selector] of [['home','/','.standings'],['schedules','/schedules','.agenda'],['results','/results','.college-banner'],['standings','/standings','.standings']]) {
-   await page.goto(path);await page.locator(selector).first().waitFor();await page.evaluate(()=>document.fonts.ready);
+   await page.goto(path);await page.locator(selector).first().waitFor();await page.getByText('Auto-refresh every 5 minutes',{exact:true}).waitFor();await page.evaluate(()=>document.fonts.ready);
    const measured=await page.evaluate(()=>({width:document.documentElement.scrollWidth,theme:document.documentElement.dataset.theme,cards:document.querySelectorAll('.game-card').length,firstCardY:document.querySelector('.game-card')?.getBoundingClientRect().y}));
    if(measured.width>width)throw Error(`${appearance}/${name}/${width} overflow: ${measured.width}`);
    if(measured.theme!==appearance)throw Error('Wrong theme');
