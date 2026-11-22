@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import CollegeIdentity from "../shared/CollegeIdentity";
-import { displayEntryLabel } from "@/lib/branding";
+import { collegeBrand, displayEntryLabel } from "@/lib/branding";
 import { COLLEGES, categoryLabel } from "@/lib/catalog";
 import type { PublicData } from "./usePublicData";
 import type { Schedule } from "@/lib/model";
@@ -29,30 +29,53 @@ export function StudentEmpty({
     </div>
   );
 }
-export function Agenda({ data }: { data: PublicData }) {
+export function Agenda({
+  data,
+  collapseDays = false,
+}: {
+  data: PublicData;
+  collapseDays?: boolean;
+}) {
   const days = [...new Set(data.schedules.map((s) => s.date))];
+  const expandedDay = days.includes(data.agendaDate || "")
+    ? data.agendaDate
+    : days[0];
   return (
     <div className="agenda">
-      {days.map((day) => (
-        <section className="agenda-day" key={day}>
-          <div className="agenda-date">
+      {days.map((day) => {
+        const schedules = data.schedules.filter((s) => s.date === day);
+        const heading = (
+          <>
             <CalendarDays size={16} aria-hidden="true" />
             <h3>{dateLabel(day)}</h3>
-            <span className="numeric">
-              {data.schedules.filter((s) => s.date === day).length} events
-            </span>
-          </div>
+            <span className="numeric">{schedules.length} events</span>
+          </>
+        );
+        const cards = (
           <ol>
-            {data.schedules
-              .filter((s) => s.date === day)
-              .map((s) => (
-                <li key={s.id}>
-                  <ScheduleCard schedule={s} data={data} />
-                </li>
-              ))}
+            {schedules.map((s) => (
+              <li key={s.id}>
+                <ScheduleCard schedule={s} data={data} />
+              </li>
+            ))}
           </ol>
-        </section>
-      ))}
+        );
+        return collapseDays && days.length > 1 ? (
+          <details
+            className="agenda-day agenda-day--collapsible"
+            key={day}
+            open={day === expandedDay}
+          >
+            <summary className="agenda-date">{heading}</summary>
+            {cards}
+          </details>
+        ) : (
+          <section className="agenda-day" key={day}>
+            <div className="agenda-date">{heading}</div>
+            {cards}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -139,7 +162,19 @@ export function CollegeResultRow({
     </details>
   );
 }
-export function CollegeBanners({ data }: { data: PublicData }) {
+export function CollegeBanners({
+  data,
+  filters = "",
+}: {
+  data: PublicData;
+  filters?: string;
+}) {
+  const collegeHref = (path: string, college: string) => {
+    const query = new URLSearchParams(filters);
+    query.set("college", college);
+    query.delete("page");
+    return `${path}?${query}`;
+  };
   return (
     <div className="college-banners">
       {COLLEGES.map((c) => {
@@ -159,11 +194,14 @@ export function CollegeBanners({ data }: { data: PublicData }) {
             <header>
               <div className="college-banner-identity">
                 <h2>
-                  <CollegeIdentity id={c.id} variant="banner" />
+                  <CollegeIdentity id={c.id} />
+                  <span className="college-banner-name">
+                    {collegeBrand(c.id)?.name || c.name}
+                  </span>
                 </h2>
               </div>
-              <Link className="text-link" href={`/results?college=${c.id}`}>
-                View all results
+              <Link className="text-link" href={collegeHref("/results", c.id)}>
+                View all {summary?.total || 0} results
               </Link>
             </header>
             {rows.map((s) => (
@@ -176,8 +214,11 @@ export function CollegeBanners({ data }: { data: PublicData }) {
             ))}
             {!rows.length ? (
               <p className="college-empty">
-                No approved results yet.{" "}
-                <Link className="text-link" href={`/schedules?college=${c.id}`}>
+                No approved results match.{" "}
+                <Link
+                  className="text-link"
+                  href={collegeHref("/schedules", c.id)}
+                >
                   Find upcoming competitions
                 </Link>
               </p>

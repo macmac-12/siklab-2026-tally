@@ -3,6 +3,13 @@ import bcrypt from "bcryptjs";
 import { isDeepStrictEqual } from "node:util";
 import type { PoolClient } from "pg";
 import { commandSchema, type Command } from "./validation";
+import { overall } from "../scoring";
+import {
+  tallyAdjustments,
+  totalsOnly,
+  TALLY_KEYS,
+  requireNonnegativeTally,
+} from "./tally";
 import {
   transaction,
   snapshot,
@@ -40,6 +47,19 @@ async function publish(
   state: Snapshot,
   reviewNote: string,
 ) {
+  if (r.kind === "award") {
+    const awards = state.revisions
+      .filter(
+        (revision) =>
+          revision.kind === "award" &&
+          revision.status === "approved" &&
+          revision.categoryId !== r.categoryId,
+      )
+      .map((revision) => revision.body as AwardBody);
+    requireNonnegativeTally(
+      overall([...awards, r.body as AwardBody], await tallyAdjustments(db)),
+    );
+  }
   const current =
     r.kind === "result"
       ? state.schedules.find((s) => s.id === r.scheduleId)?.publishedId
@@ -85,6 +105,50 @@ async function execute(
   passwordHash?: string,
 ): Promise<unknown> {
   switch (command.action) {
+    case "tally.correct": {
+      requireAdmin(user);
+      const awards = state.revisions
+        .filter((r) => r.kind === "award" && r.status === "approved")
+        .map((r) => r.body as AwardBody);
+      const current = overall(awards, await tallyAdjustments(db)).find(
+        (row) => row.id === command.collegeId,
+      )!;
+      const before = totalsOnly(current);
+      if (!isDeepStrictEqual(before, command.expectedTotals))
+        fail(
+          "This college's tally changed after your confirmation. Reload and review the new totals.",
+          409,
+        );
+      if (isDeepStrictEqual(before, command.totals))
+        fail("No tally totals changed.");
+      const delta = Object.fromEntries(
+        TALLY_KEYS.map((key) => [key, command.totals[key] - before[key]]),
+      );
+      const id = uid();
+      await db.query(
+        "INSERT INTO tally_adjustments(id,college_id,points_delta,gold_delta,silver_delta,bronze_delta,actor_id,reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [
+          id,
+          command.collegeId,
+          delta.points,
+          delta.gold,
+          delta.silver,
+          delta.bronze,
+          user.id,
+          command.reason,
+        ],
+      );
+      await audit(
+        db,
+        user,
+        "tally.corrected",
+        id,
+        { collegeId: command.collegeId, ...before },
+        { collegeId: command.collegeId, ...command.totals },
+        command.reason,
+      );
+      return { id, collegeId: command.collegeId, totals: command.totals };
+    }
     case "bracket.save":
       return saveBracket(db, user, state, command);
     case "schedule.save":
@@ -293,14 +357,13 @@ async function execute(
       return { id: r.id };
     }
     case "account.save": {
-      requireAdmin(user);
+      if (user.role !== "superadmin")
+        fail(
+          "Only the superadministrator can manage accounts and assignments.",
+          403,
+        );
       const before = command.id ? await userById(db, command.id) : null;
       if (command.id && !before) fail("Account not found.", 404);
-      if (
-        user.role !== "superadmin" &&
-        (command.role !== "officer" || (before && before.role !== "officer"))
-      )
-        fail("Only the superadministrator can manage administrators.", 403);
       if (
         before?.id === user.id &&
         (!command.active || command.role !== user.role)
@@ -435,6 +498,7 @@ async function execute(
 }
 export function commandChangesPublicData(command: Command) {
   switch (command.action) {
+    case "tally.correct":
     case "schedule.save":
     case "entry.add":
     case "category.configure":
@@ -500,16 +564,33 @@ export async function staffState(user: User) {
     const s = await snapshot(db),
       visible = (id: string) => canAccess(fresh!, id);
     const users: User[] = [];
-    if (fresh!.role !== "officer")
+    if (fresh!.role === "superadmin")
       for (const row of (
         await db.query("SELECT id FROM accounts ORDER BY name")
       ).rows)
         users.push((await userById(db, row.id))!);
-    const trail = (
-      await db.query(
-        'SELECT id,actor_id AS "actorId",action,entity_id AS "entityId",before_data AS before,after_data AS after,reason,created_at AS "createdAt" FROM audit ORDER BY created_at DESC LIMIT 200',
-      )
-    ).rows;
+    const trail =
+      fresh!.role === "superadmin"
+        ? (
+            await db.query(
+              'SELECT id,actor_id AS "actorId",action,entity_id AS "entityId",before_data AS before,after_data AS after,reason,created_at AS "createdAt" FROM audit ORDER BY created_at DESC LIMIT 200',
+            )
+          ).rows
+        : [];
+    const revisions = s.revisions.filter((r) => visible(r.categoryId));
+    const actorIds = [
+      ...new Set(
+        revisions.flatMap((r) => [r.actorId, r.reviewerId]).filter(Boolean),
+      ),
+    ];
+    const revisionActors = actorIds.length
+      ? ((
+          await db.query(
+            "SELECT id,name FROM accounts WHERE id=ANY($1::text[]) ORDER BY name,id",
+            [actorIds],
+          )
+        ).rows as Array<{ id: string; name: string }>)
+      : [];
     return {
       ...s,
       brackets: (await bracketRecords(db)).filter((b) =>
@@ -517,12 +598,14 @@ export async function staffState(user: User) {
       ),
       user: fresh,
       users,
+      revisionActors,
+      tallyAdjustments: await tallyAdjustments(db),
       categories: s.categories.filter((c) => visible(c.id)),
       disciplines: s.disciplines.filter((d) => visible(d.categoryId)),
       entries: s.entries.filter((e) => visible(e.categoryId)),
       schedules: s.schedules.filter((x) => visible(x.categoryId)),
-      revisions: s.revisions.filter((r) => visible(r.categoryId)),
-      audit: fresh!.role !== "officer" ? trail : [],
+      revisions,
+      audit: trail,
     };
   });
 }

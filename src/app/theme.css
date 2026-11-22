@@ -50,6 +50,8 @@
   --color-medal-silver-text: #4b5768;
   --color-medal-bronze-bg: #f5e8df;
   --color-medal-bronze-text: #784523;
+  --shadow-card: 0 2px 6px #171b2010, 0 1px 2px #171b2010;
+  --shadow-panel: 0 8px 20px #171b2010, 0 2px 4px #171b200d;
   --college-buhi: #d43d9e;
   --college-cas: #d94846;
   --college-ccs: #e5b817;
@@ -133,6 +135,8 @@
     --color-medal-silver-text: #c0ccda;
     --color-medal-bronze-bg: #3c2e29;
     --color-medal-bronze-text: #e7b291;
+    --shadow-card: 0 2px 8px #090d142e, inset 0 1px 0 #f2f4f708;
+    --shadow-panel: 0 8px 24px #090d143d, inset 0 1px 0 #f2f4f70a;
   }
 }
 

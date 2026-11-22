@@ -15,7 +15,13 @@ import type {
   AwardBody,
 } from "../src/lib/model";
 import { hash } from "../src/lib/server/store";
-let admin: User, officer: User, adminPool: Pool, dbName: string;
+import { overall } from "../src/lib/scoring";
+import { totalsOnly } from "../src/lib/server/tally";
+let admin: User,
+  officer: User,
+  eventAdmin: User,
+  adminPool: Pool,
+  dbName: string;
 const password = randomBytes(20).toString("hex");
 const state = () => transaction(snapshot);
 const act = (body: unknown, user = admin, key = randomUUID()) =>
@@ -114,6 +120,19 @@ before(async () => {
     result.id,
   ]);
   officer = (await transaction((db) => userById(db, result.id)))!;
+  const created = (await act({
+    action: "account.save",
+    name: "Event administrator",
+    email: "event-admin@test.invalid",
+    role: "admin",
+    active: true,
+    assignments: [],
+    password,
+  })) as { id: string };
+  await pool().query("UPDATE accounts SET must_reset=false WHERE id=$1", [
+    created.id,
+  ]);
+  eventAdmin = (await transaction((db) => userById(db, created.id)))!;
 });
 after(async () => {
   await pool().end();
@@ -170,6 +189,180 @@ test("invalid date and malformed scores rejected, no partial writes", async () =
   const s = await schedule();
   await assert.rejects(() => submit(s, matchBody(-1, 0)));
   await assert.rejects(() => submit(s, matchBody(4, 4)));
+});
+test("event administrators retain operations but cannot access account or system history controls", async () => {
+  const account = {
+    action: "account.save",
+    name: "Forbidden officer",
+    email: "forbidden@test.invalid",
+    role: "officer",
+    active: true,
+    assignments: [],
+    password,
+  };
+  await assert.rejects(() => act(account, eventAdmin), /superadministrator/);
+  await assert.rejects(() => exportBackup(eventAdmin), /superadministrator/);
+  const fixture = await schedule("volleyball-women", {
+    startsAt: null,
+    endsAt: null,
+  });
+  const { publishedId: _published, ...input } = fixture;
+  await act(
+    {
+      action: "schedule.save",
+      schedule: { ...input, title: "Administrator fixture" },
+    },
+    eventAdmin,
+  );
+  const revision = await submit(fixture);
+  await act(
+    {
+      action: "review",
+      id: revision.id,
+      decision: "approve",
+      reason: "Checked by event administrator",
+    },
+    eventAdmin,
+  );
+  const visible = await staffState(eventAdmin);
+  assert(
+    "users" in visible &&
+      visible.users.length === 0 &&
+      visible.audit.length === 0,
+  );
+  assert(
+    "revisions" in visible &&
+      visible.revisions.some((r) => r.id === revision.id),
+  );
+  assert(
+    "revisionActors" in visible &&
+      visible.revisionActors.some((actor) => actor.id === admin.id),
+  );
+  assert(
+    "revisionActors" in visible &&
+      visible.revisionActors.every(
+        (actor) => Object.keys(actor).sort().join(",") === "id,name",
+      ),
+  );
+});
+test("date-only schedules preserve null times and end time still requires a start", async () => {
+  const fixture = await schedule("basketball-women", {
+    startsAt: null,
+    endsAt: null,
+  });
+  assert.equal(fixture.startsAt, null);
+  assert.equal(fixture.endsAt, null);
+  assert.equal(fixture.followsId, null);
+  await assert.rejects(
+    () => schedule("basketball-women", { startsAt: null }),
+    /End time/,
+  );
+  const timed = await schedule("basketball-women", {
+    startsAt: "2026-11-25T01:00:00Z",
+    endsAt: null,
+    date: "2026-11-25",
+  });
+  const { publishedId: _published, ...input } = timed;
+  await assert.rejects(
+    () =>
+      act({ action: "schedule.save", schedule: { ...input, startsAt: null } }),
+    /rescheduling/,
+  );
+  await act({
+    action: "schedule.save",
+    schedule: {
+      ...input,
+      startsAt: null,
+      reason: "Official start time is still pending",
+    },
+  });
+  assert.equal(
+    (await state()).schedules.find((s) => s.id === timed.id)!.startsAt,
+    null,
+  );
+});
+test("manual tally correction publishes all four totals, requires confirmation, and guards stale/duplicate saves", async () => {
+  const initial = await publicState(new URLSearchParams());
+  const before = totalsOnly(
+    overall(
+      initial.awards.map((a) => a.body),
+      initial.tallyAdjustments,
+    ).find((r) => r.id === "BUHI")!,
+  );
+  const totals = {
+    points: before.points + 7,
+    gold: before.gold + 1,
+    silver: before.silver + 2,
+    bronze: before.bronze + 3,
+  };
+  const correction = {
+    action: "tally.correct",
+    collegeId: "BUHI",
+    expectedTotals: before,
+    totals,
+    reason: "Committee certified the manual tally correction",
+    confirmed: true,
+  };
+  await assert.rejects(() => act(correction, officer), /Administrator/);
+  await assert.rejects(() =>
+    act({ ...correction, confirmed: false }, eventAdmin),
+  );
+  await assert.rejects(() =>
+    act({ ...correction, totals: { ...totals, gold: -1 } }, eventAdmin),
+  );
+  await assert.rejects(() =>
+    act({ ...correction, reason: "Short" }, eventAdmin),
+  );
+  const key = randomUUID();
+  const [first, duplicate] = await Promise.all([
+    act(correction, eventAdmin, key),
+    act(correction, eventAdmin, key),
+  ]);
+  assert.deepEqual(first, duplicate);
+  const published = await publicState(new URLSearchParams());
+  assert.deepEqual(
+    totalsOnly(
+      overall(
+        published.awards.map((a) => a.body),
+        published.tallyAdjustments,
+      ).find((r) => r.id === "BUHI")!,
+    ),
+    totals,
+  );
+  assert.equal(published.awards.length, initial.awards.length);
+  assert(published.version > initial.version);
+  assert(
+    published.tallyAdjustments.every(
+      (row) =>
+        Object.keys(row).sort().join(",") ===
+        "bronze,collegeId,gold,points,silver",
+    ),
+  );
+  await assert.rejects(
+    () =>
+      act(
+        { ...correction, totals: { ...totals, points: totals.points + 1 } },
+        eventAdmin,
+      ),
+    /changed after/,
+  );
+  await assert.rejects(
+    () => act({ ...correction, expectedTotals: totals }, eventAdmin),
+    /No tally/,
+  );
+  await act(
+    {
+      ...correction,
+      expectedTotals: totals,
+      totals: before,
+      reason: "Reversed rehearsal correction after verification",
+    },
+    eventAdmin,
+  );
+  const ledger = await pool().query(
+    "SELECT * FROM tally_adjustments WHERE college_id='BUHI'",
+  );
+  assert.equal(ledger.rows.length, 2);
 });
 test("overlap and stale versions cannot silently overwrite", async () => {
   const s = await schedule("volleyball-men", { bestOf: 3 });
@@ -287,6 +480,45 @@ test("independent E-games championship award and reviewed correction remain atom
     awardRuling: "Committee corrected the final order",
   });
   assert.equal((await publicState(new URLSearchParams())).awards[0].id, old.id);
+  const priorPublic = await publicState(new URLSearchParams());
+  const beforeTally = totalsOnly(
+    overall(
+      priorPublic.awards.map((a) => a.body),
+      priorPublic.tallyAdjustments,
+    ).find((row) => row.id === "CCS")!,
+  );
+  const zeroTally = { ...beforeTally, points: 0, gold: 0 };
+  await act(
+    {
+      action: "tally.correct",
+      collegeId: "CCS",
+      expectedTotals: beforeTally,
+      totals: zeroTally,
+      reason: "Temporary certified correction for negative-total regression",
+      confirmed: true,
+    },
+    eventAdmin,
+  );
+  await assert.rejects(
+    () => approve(corrected.id),
+    /Reconcile its manual correction/,
+  );
+  assert.equal((await publicState(new URLSearchParams())).awards[0].id, old.id);
+  assert.equal(
+    (await state()).revisions.find((r) => r.id === corrected.id)!.status,
+    "pending",
+  );
+  await act(
+    {
+      action: "tally.correct",
+      collegeId: "CCS",
+      expectedTotals: zeroTally,
+      totals: beforeTally,
+      reason: "Reconciled the official tally before the result correction",
+      confirmed: true,
+    },
+    eventAdmin,
+  );
   await approve(corrected.id);
   const published = await publicState(new URLSearchParams());
   assert.equal(
@@ -502,15 +734,26 @@ test("bracket permissions, publication, stale saves, idempotency and backup v2/v
   assert.equal(resolved.brackets[0].resolved[1].winner, fixture.entryIds[0]);
   assert.equal(JSON.stringify(resolved.awards), awardsBefore);
   const backup = await exportBackup(admin);
-  assert.equal(backup.version, 3);
+  assert.equal(backup.version, 4);
   assert.equal(backup.tables.brackets.length, 1);
   await restoreBackup(admin, { backup, preview: true });
   const legacy = structuredClone(backup);
   legacy.version = 2;
   delete legacy.tables.brackets;
+  delete legacy.tables.tally_adjustments;
   legacy.checksum = hash(JSON.stringify(legacy.tables));
   const preview = await restoreBackup(admin, { backup: legacy, preview: true });
   assert.equal(preview.counts.brackets, 0);
+  assert.equal(preview.counts.tally_adjustments, 0);
+  const v3 = structuredClone(backup);
+  v3.version = 3;
+  delete v3.tables.tally_adjustments;
+  v3.checksum = hash(JSON.stringify(v3.tables));
+  assert.equal(
+    (await restoreBackup(admin, { backup: v3, preview: true })).counts
+      .tally_adjustments,
+    0,
+  );
   const invalid = structuredClone(backup);
   invalid.tables.brackets[0].draft.nodes[0].fixtureId = "missing";
   invalid.checksum = hash(JSON.stringify(invalid.tables));
@@ -618,6 +861,8 @@ test("disabled staff loses access and rule history persists", async () => {
 test("backup preview rolls back; invalid reference and negative points rejected; restore exact data", async () => {
   const backup = await exportBackup(admin);
   const before = await state();
+  assert.equal(backup.version, 4);
+  assert(backup.tables.tally_adjustments.length > 0);
   const preview = await restoreBackup(admin, { backup, preview: true });
   assert.equal(preview.preview, true);
   assert.equal((await state()).revisions.length, before.revisions.length);
@@ -628,6 +873,19 @@ test("backup preview rolls back; invalid reference and negative points rejected;
     restoreBackup(admin, { backup: invalid, preview: true }),
   );
   assert.equal((await state()).schedules.length, before.schedules.length);
+  const badActor = structuredClone(backup);
+  badActor.tables.tally_adjustments[0].actor_id = "missing-account";
+  badActor.checksum = hash(JSON.stringify(badActor.tables));
+  await assert.rejects(() =>
+    restoreBackup(admin, { backup: badActor, preview: true }),
+  );
+  const badTally = structuredClone(backup);
+  badTally.tables.tally_adjustments[0].points_delta = -1000000;
+  badTally.checksum = hash(JSON.stringify(badTally.tables));
+  await assert.rejects(
+    () => restoreBackup(admin, { backup: badTally, preview: true }),
+    /negative|invalid/,
+  );
   const badHistory = structuredClone(backup);
   const oldRevision = badHistory.tables.revisions.find(
     (r: { status: string; kind: string }) =>
@@ -661,5 +919,150 @@ test("backup preview rolls back; invalid reference and negative points rejected;
   assert.deepEqual(
     restored.revisions.map((r) => r.body),
     before.revisions.map((r) => r.body),
+  );
+  assert.deepEqual(
+    (await exportBackup(admin)).tables.tally_adjustments,
+    backup.tables.tally_adjustments,
+  );
+});
+test("restore rejects orphan and duplicate approved publications without changing the tally", async () => {
+  const backup = await exportBackup(admin);
+  const before = await publicState(new URLSearchParams());
+  for (const kind of ["result", "award"] as const) {
+    for (const duplicate of [false, true]) {
+      const invalid = structuredClone(backup);
+      const approved = invalid.tables.revisions.find(
+        (revision: { kind: string; status: string }) =>
+          revision.kind === kind && revision.status === "approved",
+      );
+      assert(approved, `The rehearsal needs a published ${kind}`);
+      if (duplicate)
+        invalid.tables.revisions.push({ ...approved, id: randomUUID() });
+      else if (kind === "award")
+        invalid.tables.awards = invalid.tables.awards.filter(
+          (row: { revision_id: string }) => row.revision_id !== approved.id,
+        );
+      else
+        invalid.tables.schedules.find(
+          (row: { published_id: string | null }) =>
+            row.published_id === approved.id,
+        ).published_id = null;
+      invalid.checksum = hash(JSON.stringify(invalid.tables));
+      await assert.rejects(
+        () => restoreBackup(admin, { backup: invalid, preview: true }),
+        /approved revision must be the current published/,
+      );
+      const after = await publicState(new URLSearchParams());
+      assert.deepEqual(after.awards, before.awards);
+      assert.deepEqual(after.results, before.results);
+      assert.deepEqual(after.tallyAdjustments, before.tallyAdjustments);
+      assert.equal(after.version, before.version);
+    }
+  }
+  for (const field of ["reviewed_at", "reviewer_id"]) {
+    const invalid = structuredClone(backup);
+    invalid.tables.revisions.find(
+      (revision: { status: string }) => revision.status === "approved",
+    )[field] = null;
+    invalid.checksum = hash(JSON.stringify(invalid.tables));
+    await assert.rejects(
+      () => restoreBackup(admin, { backup: invalid, preview: true }),
+      /reviewer and publication timestamp/,
+    );
+  }
+});
+test("maximum manual totals accept future awards, larger reversal deltas and exact recovery", async () => {
+  const totalsForBuhi = async () => {
+    const data = await publicState(new URLSearchParams());
+    return totalsOnly(
+      overall(
+        data.awards.map((award) => award.body),
+        data.tallyAdjustments,
+      ).find((row) => row.id === "BUHI")!,
+    );
+  };
+  const correct = async (totals: {
+    points: number;
+    gold: number;
+    silver: number;
+    bronze: number;
+  }) =>
+    act(
+      {
+        action: "tally.correct",
+        collegeId: "BUHI",
+        expectedTotals: await totalsForBuhi(),
+        totals,
+        reason: "Official boundary correction for recovery regression",
+        confirmed: true,
+      },
+      eventAdmin,
+    );
+  const maximum = {
+    points: 1000000,
+    gold: 1000000,
+    silver: 1000000,
+    bronze: 1000000,
+  };
+  await correct(maximum);
+  const snap = await state();
+  const entrant = entry(snap, "chess-women", "BUHI");
+  const fixture = await schedule("chess-women", {
+    kind: "placing",
+    entryIds: [entrant],
+    startsAt: null,
+    endsAt: null,
+  });
+  const placings = [{ entryId: entrant, rank: 1, eligible: true }];
+  const result = await submit(fixture, {
+    ...matchBody(),
+    scoreA: null,
+    scoreB: null,
+    placings,
+  });
+  await approve(result.id);
+  const award = (await act({
+    action: "award.submit",
+    categoryId: "chess-women",
+    baseId: null,
+    placings,
+    tieOrder: [],
+    ruling: "Certified champion",
+    reason: "",
+  })) as { id: string };
+  await approve(award.id);
+  assert.deepEqual(await totalsForBuhi(), {
+    ...maximum,
+    points: 1000008,
+    gold: 1000001,
+  });
+  const zero = { points: 0, gold: 0, silver: 0, bronze: 0 };
+  await correct(zero);
+  assert.deepEqual(await totalsForBuhi(), zero);
+  const recovery = await exportBackup(admin);
+  assert(
+    recovery.tables.tally_adjustments.some(
+      (row: { points_delta: number }) => row.points_delta < -1000000,
+    ),
+  );
+  assert(
+    recovery.tables.tally_adjustments.every((row: Record<string, unknown>) =>
+      ["points_delta", "gold_delta", "silver_delta", "bronze_delta"].every(
+        (field) => Number.isSafeInteger(row[field]),
+      ),
+    ),
+  );
+  await restoreBackup(admin, { backup: recovery, preview: true });
+  await correct({ points: 5, gold: 1, silver: 0, bronze: 0 });
+  await restoreBackup(admin, {
+    backup: recovery,
+    preview: false,
+    password,
+    checksum: recovery.checksum,
+  });
+  assert.deepEqual(await totalsForBuhi(), zero);
+  assert.deepEqual(
+    (await exportBackup(admin)).tables.tally_adjustments,
+    recovery.tables.tally_adjustments,
   );
 });

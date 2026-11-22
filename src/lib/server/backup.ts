@@ -3,14 +3,7 @@ import { bracketRecords, bracketContext } from "./brackets";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { saveSafetyBackup } from "./storage";
-import {
-  transaction,
-  fail,
-  hash,
-  audit,
-  snapshot,
-  userById,
-} from "./store";
+import { transaction, fail, hash, audit, snapshot, userById } from "./store";
 import {
   scheduleInput,
   resultBody,
@@ -19,7 +12,8 @@ import {
   rule,
 } from "./validation";
 import { validateResult } from "./competition";
-import { pointsFor } from "../scoring";
+import { overall, pointsFor } from "../scoring";
+import { tallyAdjustments, requireNonnegativeTally } from "./tally";
 import type { User, ResultBody, AwardBody } from "../model";
 import type { PoolClient } from "pg";
 const TABLES = [
@@ -33,6 +27,7 @@ const TABLES = [
   "awards",
   "audit",
   "brackets",
+  "tally_adjustments",
 ] as const;
 const text = z.string().max(10000),
   id = z.string().min(1).max(150),
@@ -60,6 +55,35 @@ const awardBody = z
   })
   .strict();
 const schemas = {
+  tally_adjustments: z
+    .object({
+      id,
+      college_id: college,
+      points_delta: z
+        .number()
+        .int()
+        .min(-Number.MAX_SAFE_INTEGER)
+        .max(Number.MAX_SAFE_INTEGER),
+      gold_delta: z
+        .number()
+        .int()
+        .min(-Number.MAX_SAFE_INTEGER)
+        .max(Number.MAX_SAFE_INTEGER),
+      silver_delta: z
+        .number()
+        .int()
+        .min(-Number.MAX_SAFE_INTEGER)
+        .max(Number.MAX_SAFE_INTEGER),
+      bronze_delta: z
+        .number()
+        .int()
+        .min(-Number.MAX_SAFE_INTEGER)
+        .max(Number.MAX_SAFE_INTEGER),
+      actor_id: id,
+      reason: z.string().trim().min(10).max(2000),
+      created_at: date,
+    })
+    .strict(),
   brackets: z
     .object({
       id,
@@ -190,7 +214,7 @@ const schemas = {
 const envelope = z
   .object({
     format: z.literal("siklab-backup"),
-    version: z.union([z.literal(2), z.literal(3)]),
+    version: z.union([z.literal(2), z.literal(3), z.literal(4)]),
     createdAt: date,
     checksum: z.string().regex(/^[a-f0-9]{64}$/),
     tables: z
@@ -198,7 +222,7 @@ const envelope = z
         Object.fromEntries(
           TABLES.map((t) => [
             t,
-            t === "brackets"
+            t === "brackets" || t === "tally_adjustments"
               ? z.array(schemas[t]).max(100000).optional()
               : z.array(schemas[t]).max(100000),
           ]),
@@ -209,12 +233,23 @@ const envelope = z
   .strict();
 export async function exportInside(db: PoolClient) {
   const tables: Record<string, unknown[]> = {};
-  for (const t of TABLES)
-    tables[t] = (await db.query(`SELECT * FROM ${t}`)).rows;
+  for (const t of TABLES) {
+    const rows = (await db.query(`SELECT * FROM ${t}`)).rows;
+    tables[t] =
+      t === "tally_adjustments"
+        ? rows.map((row) => ({
+            ...row,
+            points_delta: Number(row.points_delta),
+            gold_delta: Number(row.gold_delta),
+            silver_delta: Number(row.silver_delta),
+            bronze_delta: Number(row.bronze_delta),
+          }))
+        : rows;
+  }
   const normalized = JSON.parse(JSON.stringify(tables));
   return {
     format: "siklab-backup",
-    version: 3,
+    version: 4,
     createdAt: new Date().toISOString(),
     tables: normalized,
     checksum: hash(JSON.stringify(normalized)),
@@ -232,15 +267,25 @@ export async function requireFreshSuperadmin(db: PoolClient, user: User) {
   const fresh = await userById(db, user.id);
   if (!fresh?.active || fresh.role !== "superadmin")
     fail("An active superadministrator account is required.", 403);
-  if (fresh!.mustReset) fail("Change your temporary password before continuing.", 403);
+  if (fresh!.mustReset)
+    fail("Change your temporary password before continuing.", 403);
   return fresh!;
 }
-type RestoreResult = { ok: boolean; preview: boolean; checksum: string; counts: Record<string, number> };
+type RestoreResult = {
+  ok: boolean;
+  preview: boolean;
+  checksum: string;
+  counts: Record<string, number>;
+};
 type RestoreHooks = {
   before?: (db: PoolClient) => Promise<void>;
   after?: (db: PoolClient, result: RestoreResult) => Promise<void>;
 };
-export async function restoreBackup(user: User, input: unknown, hooks: RestoreHooks = {}) {
+export async function restoreBackup(
+  user: User,
+  input: unknown,
+  hooks: RestoreHooks = {},
+) {
   if (user.role !== "superadmin")
     fail("Only the superadministrator can restore backups.", 403);
   const req = z
@@ -257,11 +302,16 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
   const raw = req.backup as { tables: unknown };
   if (hash(JSON.stringify(raw.tables)) !== backup.checksum)
     fail("Backup checksum does not match its contents.");
-  if (backup.version === 3 && !backup.tables.brackets)
-    fail("Version 3 backups must include brackets.");
+  if (backup.version >= 3 && !backup.tables.brackets)
+    fail("Version 3 and 4 backups must include brackets.");
   if (backup.version === 2 && backup.tables.brackets)
     fail("Version 2 backups cannot contain brackets.");
+  if (backup.version === 4 && !backup.tables.tally_adjustments)
+    fail("Version 4 backups must include tally adjustments.");
+  if (backup.version < 4 && backup.tables.tally_adjustments)
+    fail("Legacy backups cannot contain tally adjustments.");
   backup.tables.brackets ||= [];
+  backup.tables.tally_adjustments ||= [];
   const counts = Object.fromEntries(
     TABLES.map((t) => [t, backup.tables[t].length]),
   );
@@ -271,7 +321,8 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
   if (!mine?.active || mine.role !== "superadmin")
     fail("The backup must preserve your active superadministrator account.");
   return transaction(async (db) => {
-    if (req.preview) await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+    if (req.preview)
+      await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await db.query("SELECT pg_advisory_xact_lock(2026,1)");
     await requireFreshSuperadmin(db, user);
     await hooks.before?.(db);
@@ -294,6 +345,7 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
     await db.query("DELETE FROM idempotency");
     await db.query("UPDATE schedules SET published_id=NULL");
     for (const t of [
+      "tally_adjustments",
       "brackets",
       "audit",
       "awards",
@@ -308,13 +360,32 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
       await db.query(`DELETE FROM ${t}`);
     for (const t of TABLES)
       for (let offset = 0; offset < backup.tables[t].length; offset += 100) {
-        const rows = backup.tables[t].slice(offset, offset + 100) as Record<string, unknown>[];
-        const cols = Object.keys(rows[0]), values: unknown[] = [];
-        const tuples = rows.map((record) => `(${cols.map((k) => {
-          values.push(["data", "body", "before_data", "after_data", "draft", "published"].includes(k)
-            ? JSON.stringify(record[k]) : record[k]);
-          return `$${values.length}`;
-        }).join(",")})`);
+        const rows = backup.tables[t].slice(offset, offset + 100) as Record<
+          string,
+          unknown
+        >[];
+        const cols = Object.keys(rows[0]),
+          values: unknown[] = [];
+        const tuples = rows.map(
+          (record) =>
+            `(${cols
+              .map((k) => {
+                values.push(
+                  [
+                    "data",
+                    "body",
+                    "before_data",
+                    "after_data",
+                    "draft",
+                    "published",
+                  ].includes(k)
+                    ? JSON.stringify(record[k])
+                    : record[k],
+                );
+                return `$${values.length}`;
+              })
+              .join(",")})`,
+        );
         await db.query(
           `INSERT INTO ${t} (${cols.map((k) => `"${k}"`).join(",")}) VALUES ${tuples.join(",")}`,
           values,
@@ -453,6 +524,25 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
         )
           fail("Invalid revision ancestry.");
       }
+      if (revision.status === "approved") {
+        if (!revision.reviewedAt || !revision.reviewerId)
+          fail(
+            "Approved revisions require a reviewer and publication timestamp.",
+          );
+        const published =
+          revision.kind === "result"
+            ? s.schedules.some(
+                (schedule) => schedule.publishedId === revision.id,
+              )
+            : backup.tables.awards.some(
+                (row: unknown) =>
+                  (row as { revision_id: string }).revision_id === revision.id,
+              );
+        if (!published)
+          fail(
+            "An approved revision must be the current published result or award.",
+          );
+      }
     }
     for (const row of backup.tables.awards) {
       const a = row as { category_id: string; revision_id: string },
@@ -474,6 +564,14 @@ export async function restoreBackup(user: User, input: unknown, hooks: RestoreHo
       )
         fail("Award points do not match their rule.");
     }
+    const publishedAwards = backup.tables.awards.map((row: unknown) => {
+      const publication = row as { revision_id: string };
+      return s.revisions.find((r) => r.id === publication.revision_id)!
+        .body as AwardBody;
+    });
+    requireNonnegativeTally(
+      overall(publishedAwards, await tallyAdjustments(db)),
+    );
     await db.query("SET CONSTRAINTS ALL IMMEDIATE");
     if (req.preview) await db.query("ROLLBACK TO SAVEPOINT validate_restore");
     else

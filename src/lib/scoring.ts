@@ -1,5 +1,12 @@
 import { COLLEGES, type PointsRule, type Category } from "./catalog";
-import type { AwardRow, Entry, Placing, ResultBody, Schedule } from "./model";
+import type {
+  AwardRow,
+  Entry,
+  Placing,
+  ResultBody,
+  Schedule,
+  TallyAdjustment,
+} from "./model";
 export function pointsFor(
   rank: number | null,
   eligible: boolean,
@@ -117,7 +124,10 @@ export function aggregateAwards(
     points: pointsFor(i + 1, true, category.rule),
   }));
 }
-export function overall(awards: { rows: AwardRow[] }[]) {
+export function overall(
+  awards: { rows: AwardRow[] }[],
+  adjustments: TallyAdjustment[] = [],
+) {
   const rows = COLLEGES.map((c) => ({
     ...c,
     points: 0,
@@ -134,10 +144,20 @@ export function overall(awards: { rows: AwardRow[] }[]) {
       if (row.eligible && row.rank === 2) college.silver++;
       if (row.eligible && row.rank === 3) college.bronze++;
     }
+  for (const adjustment of adjustments) {
+    const college = rows.find((c) => c.id === adjustment.collegeId)!;
+    for (const key of ["points", "gold", "silver", "bronze"] as const)
+      college[key] += adjustment[key];
+  }
+  const hasTally =
+    awards.length > 0 ||
+    adjustments.some((a) =>
+      [a.points, a.gold, a.silver, a.bronze].some((value) => value !== 0),
+    );
   rows.sort((a, b) => b.points - a.points || a.id.localeCompare(b.id));
   rows.forEach(
     (r, i) =>
-      (r.rank = awards.length
+      (r.rank = hasTally
         ? i && rows[i - 1].points === r.points
           ? rows[i - 1].rank
           : i + 1
@@ -198,7 +218,7 @@ export function tournamentTable(
         b.for - a.for;
   rows.sort(primary);
   // CODM: direct encounter for two-way ties, mini-table wins then map difference for 3+.
-  for (let i = 0; i < rows.length;) {
+  for (let i = 0; i < rows.length; ) {
     let end = i + 1;
     while (end < rows.length && primary(rows[i], rows[end]) === 0) end++;
     const group = rows.slice(i, end);

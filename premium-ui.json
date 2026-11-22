@@ -4,10 +4,12 @@
     "src/components/public",
     "src/components/staff",
     "src/components/shared",
+    "src/components/ui",
     "src/app/theme.css",
     "src/app/globals.css",
     "src/app/public.css",
-    "src/app/staff.css"
+    "src/app/staff.css",
+    "src/app/ui.css"
   ],
   "locale": "en-PH",
   "canonicalMap": "UX-CONTRACT.md",

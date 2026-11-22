@@ -91,6 +91,14 @@ export type Audit = {
   reason: string;
   createdAt: string;
 };
+export type TallyTotals = {
+  points: number;
+  gold: number;
+  silver: number;
+  bronze: number;
+};
+/** Signed official corrections, independent from championship awards. */
+export type TallyAdjustment = TallyTotals & { collegeId: CollegeId };
 export type Snapshot = {
   categories: Category[];
   disciplines: Discipline[];
@@ -105,8 +113,11 @@ export type StaffSnapshot = Snapshot & {
   user: User;
   users: User[];
   audit: Audit[];
+  revisionActors: Array<{ id: string; name: string }>;
+  tallyAdjustments: TallyAdjustment[];
 };
 export type PublicSnapshot = Omit<Snapshot, "revisions"> & {
+  tallyAdjustments: TallyAdjustment[];
   results: Array<{
     id: string;
     categoryId: string;

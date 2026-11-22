@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, GitBranch } from "lucide-react";
 import type { PublicBracket } from "@/lib/public-projections";
 import type { PublicSnapshot } from "@/lib/model";
 import { matchesFilters } from "@/lib/public-projections";
-import { dateLabel, timeLabel } from "../shared/format";
+import { dateLabel, scheduleTimeLabel } from "../shared/format";
 import CollegeIdentity from "../shared/CollegeIdentity";
 import { displayEntryLabel } from "@/lib/branding";
 export default function BracketView({
@@ -205,11 +205,7 @@ export default function BracketView({
                           {fixture ? (
                             <>
                               {dateLabel(fixture.date)} ·{" "}
-                              {fixture.startsAt
-                                ? timeLabel(fixture.startsAt)
-                                : fixture.followsId
-                                  ? `After ${data.schedules.find((s) => s.id === fixture.followsId)?.title || "preceding competition"}`
-                                  : "Time to be announced"}
+                              {scheduleTimeLabel(fixture, data.schedules)}
                               <br />
                               {fixture.venue}
                             </>

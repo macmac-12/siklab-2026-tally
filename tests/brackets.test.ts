@@ -171,6 +171,7 @@ test("corrections preserve confirmed fixtures and flag descendants", () => {
   assert.equal(JSON.stringify(c.schedules), before);
 });
 const snapshot = (): PublicSnapshot => ({
+  tallyAdjustments: [],
   ...context(),
   categories: [],
   disciplines: [],

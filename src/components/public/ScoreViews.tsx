@@ -1,13 +1,14 @@
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Medal, MapPin, ShieldCheck, Swords, Trophy } from "lucide-react";
 import CollegeIdentity, { CollegeCrest } from "../shared/CollegeIdentity";
 import { collegeBrand, displayCode, displayEntryLabel } from "@/lib/branding";
 import { COLLEGES, categoryLabel } from "@/lib/catalog";
 import { overall, tournamentTable, pointsFor } from "@/lib/scoring";
+import { winningCollege } from "@/lib/public-projections";
 import type { PublicData } from "./usePublicData";
 import type { Schedule, ResultBody } from "@/lib/model";
-import { timeLabel } from "../shared/format";
+import { scheduleTimeLabel } from "../shared/format";
 export function College({ id }: { id: string }) {
   return <CollegeIdentity id={id} />;
 }
@@ -34,9 +35,14 @@ export function LeaderStrip({
     measure();
     return () => observer.disconnect();
   }, []);
-  const rows = data ? overall(data.awards.map((a) => a.body)) : [];
+  const rows = data
+    ? overall(
+        data.awards.map((a) => a.body),
+        data.tallyAdjustments,
+      )
+    : [];
   const leaders = rows.slice(0, 3);
-  const awarded = !!data?.awards.length;
+  const awarded = rows.some((row) => row.rank > 0);
   const tied =
     awarded &&
     leaders.some(
@@ -66,9 +72,9 @@ export function LeaderStrip({
             ) : tied ? (
               "Shared ranks · points order"
             ) : awarded ? (
-              "Championship points"
+              "Official championship totals"
             ) : data ? (
-              "Awaiting approved awards"
+              "Awaiting official totals"
             ) : (
               "Loading standings…"
             )}
@@ -101,7 +107,7 @@ export function LeaderStrip({
           <div className="leader-pending">
             <span>
               {data
-                ? "The championship starts with the first official award."
+                ? "The championship starts with the first official tally."
                 : error
                   ? "Reconnect to load official standings."
                   : "Getting the latest official standings."}
@@ -121,7 +127,13 @@ export function Standings({
   data: PublicData;
   detail?: boolean;
 }) {
-  const rows = overall(data.awards.map((a) => a.body));
+  const rows = overall(
+    data.awards.map((a) => a.body),
+    data.tallyAdjustments,
+  );
+  const adjusted = (data.tallyAdjustments || []).some(
+    (a) => a.points || a.gold || a.silver || a.bronze,
+  );
   return (
     <section
       className={`panel standings ${detail ? "standings-detail" : ""}`}
@@ -139,7 +151,7 @@ export function Standings({
           <span> awarded</span>
         </span>
       </div>
-      {!data.awards.length ? (
+      {!rows.some((row) => row.rank > 0) ? (
         <p className="tally-awaiting">
           No approved championship awards yet. The race is still open.
         </p>
@@ -156,13 +168,13 @@ export function Standings({
               </th>
               <th scope="col">College</th>
               <th scope="col" className="numeric medal-gold">
-                <abbr title="Gold / first-place awards">G</abbr>
+                Gold
               </th>
               <th scope="col" className="numeric medal-silver">
-                <abbr title="Silver / second-place awards">S</abbr>
+                Silver
               </th>
               <th scope="col" className="numeric medal-bronze">
-                <abbr title="Bronze / third-place awards">B</abbr>
+                Bronze
               </th>
               <th scope="col" className="numeric">
                 Points
@@ -195,8 +207,10 @@ export function Standings({
       </div>
       <div className="tally-foot">
         <p className="table-note">
-          Approved championship points. Match wins and discipline sub-points are
-          counted separately.
+          {adjusted
+            ? "Includes official tally adjustments. "
+            : "Approved championship totals. "}
+          Match wins and discipline sub-points are counted separately.
         </p>
         {!detail ? (
           <Link className="text-link" href="/standings">
@@ -296,16 +310,30 @@ export function ScheduleCard({
   showResult?: boolean;
 }) {
   const c = data.categories.find((c) => c.id === s.categoryId),
-    result = data.results.find((r) => r.scheduleId === s.id),
-    preceding = data.schedules.find((x) => x.id === s.followsId);
+    result = data.results.find((r) => r.scheduleId === s.id);
   const participants = s.entryIds
     .map((id) => data.entries.find((e) => e.id === id))
     .filter((e): e is NonNullable<typeof e> => !!e);
+  const colleges = [...new Set(participants.map((e) => e.collegeId))];
+  const winner = showResult
+    ? winningCollege(s, result?.body, data.entries)
+    : null;
+  const colors = colleges.map((id) => `var(${collegeBrand(id)?.accentToken})`);
+  const cardStyle = {
+    "--clash-a": colors[0] || "var(--public-border)",
+    "--clash-b": colors[1] || colors[0] || "var(--public-border)",
+    "--clash-c": colors[2] || colors[1] || colors[0] || "var(--public-border)",
+    "--winner-accent": winner
+      ? `var(${collegeBrand(winner)?.accentToken})`
+      : "var(--public-border)",
+  } as CSSProperties;
   const status =
     s.status === "completed" && !result ? "Awaiting result" : s.status;
   return (
     <article
-      className={`game-card ${s.kind === "match" ? "match-card" : "placing-card"}`}
+      className={`game-card game-card--compact ${s.kind === "match" ? "match-card" : "placing-card"} ${winner ? "game-card--winner" : ""}`}
+      data-colleges={Math.min(colleges.length, 4)}
+      style={cardStyle}
     >
       <div className="game-top">
         <span className="eyebrow">
@@ -325,75 +353,71 @@ export function ScheduleCard({
           {s.kind === "match" ? "Match" : "Placings"}
         </span>
       </div>
-      <p className="game-meta">
-        {s.stage}
-        {s.disciplineId
-          ? ` · ${data.disciplines.find((d) => d.id === s.disciplineId)?.name || ""}`
-          : ""}
-      </p>
       {s.kind === "match" ? (
-        result && showResult ? (
-          <ResultContent body={result.body} schedule={s} data={data} />
-        ) : (
-          <div className="match-score">
-            {participants.map((e) => (
-              <div className="score-side" key={e.id}>
-                <CollegeIdentity
-                  id={e.collegeId}
-                  variant="participant"
-                  label={displayEntryLabel(e)}
-                />
-                <strong className="numeric pending-score">—</strong>
-              </div>
-            ))}
-          </div>
-        )
+        <div className="compact-match-score">
+          {participants.map((e, index) => (
+            <div
+              className={`compact-score-side ${winner === e.collegeId ? "is-winner" : ""}`}
+              key={e.id}
+            >
+              <CollegeIdentity id={e.collegeId} label={displayEntryLabel(e)} />
+              <strong className="numeric">
+                {result && showResult
+                  ? ((index === 0 ? result.body.scoreA : result.body.scoreB) ??
+                    "—")
+                  : "—"}
+              </strong>
+            </div>
+          ))}
+        </div>
       ) : (
-        <div className="placing-preview">
-          <div className="entrant-crests">
+        <div className="compact-entrants">
+          <div className="entrant-crests" aria-label="Participating colleges">
             {participants.map((e) => (
-              <span key={e.id} title={displayEntryLabel(e)}>
-                <CollegeCrest id={e.collegeId} size={32} />
-              </span>
+              <CollegeIdentity
+                key={e.id}
+                id={e.collegeId}
+                label={displayEntryLabel(e)}
+              />
             ))}
           </div>
-          <p>
-            <strong className="numeric">{s.entryIds.length}</strong> competing{" "}
-            {s.entryIds.length === 1 ? "entry" : "entries"}
-          </p>
-          {result && showResult ? (
-            <details className="placing-disclosure">
-              <summary>View approved placings</summary>
-              <ResultContent body={result.body} schedule={s} data={data} />
-            </details>
-          ) : (
-            <span className="muted">Official placings follow review.</span>
-          )}
         </div>
       )}
       <div className="game-footer">
         <span className="agenda-time">
-          {s.startsAt ? (
-            <time dateTime={s.startsAt}>{timeLabel(s.startsAt)}</time>
-          ) : s.followsId ? (
-            `After ${preceding?.title || "preceding competition"}`
-          ) : (
-            "Time to be announced"
-          )}
+          {scheduleTimeLabel(s, data.schedules)}
         </span>
         <span>
           <MapPin size={14} aria-hidden="true" />
           {s.venue}
         </span>
       </div>
-      {s.reason ? (
-        <p className="schedule-change">Schedule update: {s.reason}</p>
+      {winner ? (
+        <p className="winner-label">
+          <Trophy size={12} aria-hidden="true" /> {displayCode(winner)} won
+        </p>
       ) : null}
-      {result ? (
-        <span className="approved-label">
-          <ShieldCheck size={12} aria-hidden="true" /> Approved result
-        </span>
-      ) : null}
+      <details className="game-details">
+        <summary>
+          {result && showResult
+            ? "Approved result & details"
+            : "Competition details"}
+        </summary>
+        <div>
+          <p className="game-meta">
+            {s.stage}
+            {s.disciplineId
+              ? ` · ${data.disciplines.find((d) => d.id === s.disciplineId)?.name || ""}`
+              : ""}
+          </p>
+          {result && showResult ? (
+            <ResultContent body={result.body} schedule={s} data={data} />
+          ) : null}
+          {s.reason ? (
+            <p className="schedule-change">Schedule update: {s.reason}</p>
+          ) : null}
+        </div>
+      </details>
     </article>
   );
 }
@@ -409,6 +433,12 @@ export function AwardBreakdown({
   const awards = data.awards.filter(
     (a) => !category || a.categoryId === category,
   );
+  const adjustments = (data.tallyAdjustments || []).filter(
+    (row) =>
+      (!college || row.collegeId === college) &&
+      (row.points || row.gold || row.silver || row.bronze),
+  );
+  const signed = (value: number) => (value > 0 ? `+${value}` : String(value));
   return (
     <section className="panel">
       <div className="section-head">
@@ -470,6 +500,51 @@ export function AwardBreakdown({
           text="The official tally updates after final standings are reviewed and approved."
         />
       )}
+      {adjustments.length ? (
+        <details className="award-detail">
+          <summary>
+            Official tally adjustments <span>Overall totals</span>
+          </summary>
+          <p className="adjustment-note">
+            These corrections apply to the overall college tally, separately
+            from category awards.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">College</th>
+                  <th scope="col" className="numeric">
+                    Gold
+                  </th>
+                  <th scope="col" className="numeric">
+                    Silver
+                  </th>
+                  <th scope="col" className="numeric">
+                    Bronze
+                  </th>
+                  <th scope="col" className="numeric">
+                    Points
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {adjustments.map((row) => (
+                  <tr key={row.collegeId}>
+                    <th scope="row">
+                      <College id={row.collegeId} />
+                    </th>
+                    <td className="numeric">{signed(row.gold)}</td>
+                    <td className="numeric">{signed(row.silver)}</td>
+                    <td className="numeric">{signed(row.bronze)}</td>
+                    <td className="numeric">{signed(row.points)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }

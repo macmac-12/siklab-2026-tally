@@ -223,8 +223,6 @@ export function validateSchedule(
     fail("Select the approved series length.");
   if (s.kind === "placing" && s.bestOf)
     fail("Placing competitions do not have a series length.");
-  if (!s.startsAt && !s.followsId)
-    fail("Choose a start time or the preceding match.");
   if (s.startsAt && s.followsId)
     fail("Use a fixed time or succession, not both.");
   if (

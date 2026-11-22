@@ -1,6 +1,10 @@
 "use client";
 import StaffForm from "./StaffForm";
-import { useState } from "react";
+import EventRevisionHistory from "./EventRevisionHistory";
+import { useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, Trophy } from "lucide-react";
+import StaffDialog, { useStaffDialogClose } from "@/components/ui/StaffDialog";
+import { pointsFor } from "@/lib/scoring";
 import type {
   StaffSnapshot,
   Schedule,
@@ -13,13 +17,45 @@ import { categoryLabel, COLLEGES } from "@/lib/catalog";
 import type { Run } from "./client";
 import { displayCode, displayEntryLabel } from "@/lib/branding";
 import CollegeIdentity, { CollegeCrest } from "../shared/CollegeIdentity";
-function tieOrder(value: FormDataEntryValue | null) {
-  return String(value || "")
-    .split(",")
-    .map((code) => code.trim().toUpperCase())
-    .filter(Boolean)
-    .map((code) => (code === "BC" ? "BUHI" : code));
+function tieOrder(value: FormDataEntryValue | null): string[] {
+  try {
+    return JSON.parse(String(value || "[]")) as string[];
+  } catch {
+    return [];
+  }
 }
+function subpointTotals(
+  state: StaffSnapshot,
+  categoryId: string,
+  override?: { scheduleId: string; rows: Placing[] },
+) {
+  const totals: Record<string, number> = {};
+  for (const discipline of state.disciplines.filter(
+    (d) => d.categoryId === categoryId && d.active,
+  )) {
+    const final = state.schedules.find(
+      (s) =>
+        s.disciplineId === discipline.id &&
+        s.isFinal &&
+        s.kind === "placing" &&
+        s.status !== "cancelled",
+    );
+    if (!final) continue;
+    const body = state.revisions.find((r) => r.id === final.publishedId)
+      ?.body as ResultBody | undefined;
+    const rows =
+      override?.scheduleId === final.id ? override.rows : body?.placings || [];
+    for (const row of rows) {
+      const entry = state.entries.find((e) => e.id === row.entryId);
+      if (entry)
+        totals[entry.collegeId] =
+          (totals[entry.collegeId] || 0) +
+          pointsFor(row.rank, row.eligible, discipline.rule);
+    }
+  }
+  return totals;
+}
+
 export function PlacingsEditor({
   entries,
   rows,
@@ -109,21 +145,111 @@ export function PlacingsEditor({
     </div>
   );
 }
-export function TieFields() {
+export function TieFields({
+  state,
+  categoryId,
+  override,
+}: {
+  state: StaffSnapshot;
+  categoryId: string;
+  override?: { scheduleId: string; rows: Placing[] };
+}) {
+  const { markDirty } = useStaffDialogClose()!;
+  const totals = subpointTotals(state, categoryId, override);
+  const eligible = COLLEGES.filter((c) => (totals[c.id] || 0) > 0)
+    .map((c) => c.id as string)
+    .sort((a, b) => totals[b] - totals[a]);
+  const signature = eligible.join("|");
+  const [order, setOrder] = useState(eligible);
+  useEffect(() => {
+    setOrder((previous) =>
+      [
+        ...previous.filter((id) => eligible.includes(id)),
+        ...eligible.filter((id) => !previous.includes(id)),
+      ].sort((a, b) => totals[b] - totals[a]),
+    );
+    // The signature captures the membership; totals are reflected when moving or submitting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, JSON.stringify(totals)]);
+  const ordered = [
+    ...order.filter((id) => eligible.includes(id)),
+    ...eligible.filter((id) => !order.includes(id)),
+  ].sort((a, b) => totals[b] - totals[a]);
+  const tied = eligible.some((id, i) =>
+    eligible.some((other, j) => i !== j && totals[id] === totals[other]),
+  );
+  const move = (index: number, direction: number) => {
+    const next = [...ordered];
+    [next[index], next[index + direction]] = [
+      next[index + direction],
+      next[index],
+    ];
+    setOrder(next);
+    markDirty();
+  };
   return (
-    <div className="form-grid">
+    <div className="championship-tie-fields">
+      <input type="hidden" name="tieOrder" value={JSON.stringify(ordered)} />
+      {state.categories.find((c) => c.id === categoryId)?.aggregation ===
+      "subpoints" ? (
+        <section aria-label="Calculated championship order">
+          <h3>Calculated championship order</h3>
+          <p className="small muted">
+            {tied
+              ? "Move tied colleges into their certified order, then record the official ruling."
+              : "Approved discipline results determine this order automatically."}
+          </p>
+          {ordered.length ? (
+            <ol className="college-order-list">
+              {ordered.map((id, index) => (
+                <li key={id}>
+                  <span className="numeric">{index + 1}</span>
+                  <CollegeIdentity id={id} />
+                  <strong className="numeric">
+                    {totals[id]} <small>sub-points</small>
+                  </strong>
+                  {tied ? (
+                    <div className="order-controls">
+                      <button
+                        type="button"
+                        aria-label={`Move ${displayCode(id)} up`}
+                        disabled={
+                          !index || totals[ordered[index - 1]] !== totals[id]
+                        }
+                        onClick={() => move(index, -1)}
+                      >
+                        <ArrowUp size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${displayCode(id)} down`}
+                        disabled={
+                          index === ordered.length - 1 ||
+                          totals[ordered[index + 1]] !== totals[id]
+                        }
+                        onClick={() => move(index, 1)}
+                      >
+                        <ArrowDown size={16} />
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">
+              Approved final discipline results will appear here.
+            </p>
+          )}
+        </section>
+      ) : null}
       <label>
-        Official order if sub-point totals tie
-        <input
-          name="tieOrder"
-          placeholder="e.g. CCS, CAS, CEA (include all eligible colleges)"
-        />
-      </label>
-      <label>
-        Official tie / final-standing ruling
+        Official championship ruling{" "}
+        {tied ? "(required for tied totals)" : "(optional)"}
         <textarea
           className="resize-none"
           name="ruling"
+          required={tied}
           maxLength={2000}
           placeholder="Record the playoff result or committee decision."
         />
@@ -131,6 +257,7 @@ export function TieFields() {
     </div>
   );
 }
+
 export default function ResultEditor({
   state: initialState,
   schedule: initialSchedule,
@@ -144,6 +271,7 @@ export default function ResultEditor({
   close: () => void;
   busy: boolean;
 }) {
+  const { complete } = useStaffDialogClose()!;
   const [state] = useState(initialState),
     [s] = useState(initialSchedule);
   const draft = state.revisions.find(
@@ -190,14 +318,10 @@ export default function ResultEditor({
     (r) => r.scheduleId === s.id && r.status === "pending",
   );
   return (
-    <section className="panel editor">
-      <div className="section-head">
-        <div>
-          <span className="eyebrow">{categoryLabel(c)}</span>
-          <h2>{s.title}</h2>
-        </div>
-        <button onClick={close}>Close</button>
-      </div>
+    <section className="editor dialog-editor">
+      <p className="eyebrow">
+        {categoryLabel(c)} · {s.title}
+      </p>
       <p className="muted">
         {s.publishedId
           ? "Submit a correction. The existing approved result stays public until review."
@@ -249,7 +373,7 @@ export default function ResultEditor({
               reason: f.get("reason") || "",
             })
           )
-            close();
+            complete();
         }}
       >
         {s.kind === "match" ? (
@@ -342,7 +466,11 @@ export default function ResultEditor({
                 Sub-point totals and championship points will be recalculated.
               </p>
             )}
-            <TieFields />
+            <TieFields
+              state={state}
+              categoryId={c.id}
+              override={{ scheduleId: s.id, rows }}
+            />
           </fieldset>
         ) : null}
         <div className="actions">
@@ -362,7 +490,7 @@ export default function ResultEditor({
     </section>
   );
 }
-export function AwardEditor({
+function ChampionshipForm({
   state: initialState,
   categoryId,
   run,
@@ -373,6 +501,7 @@ export function AwardEditor({
   run: Run;
   busy: boolean;
 }) {
+  const { complete } = useStaffDialogClose()!;
   const [state] = useState(initialState);
   const pending = initialState.revisions.find(
     (r) =>
@@ -409,8 +538,7 @@ export function AwardEditor({
     (s) => !s.publishedId || s.status !== "completed",
   );
   return (
-    <section className="panel editor">
-      <h2>{categoryLabel(c)} · Championship award</h2>
+    <section className="editor dialog-editor">
       <p>This is the step that adds official points to the college tally.</p>
       {pending ? (
         <div className="success" role="status">
@@ -437,21 +565,24 @@ export function AwardEditor({
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
-          await run({
-            action: "award.submit",
-            categoryId,
-            placings: rows,
-            tieOrder: tieOrder(f.get("tieOrder")),
-            ruling: f.get("ruling") || "",
-            baseId: award?.id || null,
-            reason: f.get("reason") || "",
-          });
+          if (
+            await run({
+              action: "award.submit",
+              categoryId,
+              placings: rows,
+              tieOrder: tieOrder(f.get("tieOrder")),
+              ruling: f.get("ruling") || "",
+              baseId: award?.id || null,
+              reason: f.get("reason") || "",
+            })
+          )
+            complete();
         }}
       >
         {c.aggregation === "direct" ? (
           <PlacingsEditor entries={entries} rows={rows} onChange={setRows} />
         ) : null}
-        <TieFields />
+        <TieFields state={state} categoryId={categoryId} />
         {award ? (
           <label>
             Award correction reason
@@ -471,6 +602,146 @@ export function AwardEditor({
           Submit championship standings
         </button>
       </StaffForm>
+    </section>
+  );
+}
+
+export function AwardEditor({
+  state,
+  categoryId,
+  run,
+  busy,
+  error = "",
+  onOpen,
+}: {
+  state: StaffSnapshot;
+  categoryId: string;
+  run: Run;
+  busy: boolean;
+  error?: string;
+  onOpen?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const category = state.categories.find((c) => c.id === categoryId);
+  if (!category) return <p>Select an event.</p>;
+  const pending = state.revisions.find(
+    (r) =>
+      r.categoryId === categoryId &&
+      r.kind === "award" &&
+      r.status === "pending",
+  );
+  const approved = state.revisions.find(
+    (r) =>
+      r.categoryId === categoryId &&
+      r.kind === "award" &&
+      r.status === "approved",
+  );
+  const schedules = state.schedules.filter(
+    (s) => s.categoryId === categoryId && s.status !== "cancelled",
+  );
+  const unresolved = schedules.filter(
+    (s) => !s.publishedId || s.status !== "completed",
+  );
+  return (
+    <section className="stack">
+      <article className="panel compact championship-summary">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow">OFFICIAL COLLEGE POINTS</span>
+            <h2>{categoryLabel(category)}</h2>
+          </div>
+          <Trophy size={24} aria-hidden="true" />
+        </div>
+        <p className="muted">
+          Championship standings award official college points after review.
+        </p>
+        <p className="small">
+          {pending
+            ? "Awaiting review"
+            : approved
+              ? "Published championship"
+              : "Not finalized"}{" "}
+          · {schedules.length - unresolved.length}/{schedules.length}{" "}
+          competitions resolved
+        </p>
+        {!category.confirmed ? <p className="alert">{category.hold}</p> : null}
+        {unresolved.length ? (
+          <p className="small muted">
+            Resolve {unresolved.length} remaining competition(s) before
+            submitting.
+          </p>
+        ) : null}
+        {approved ? (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>College</th>
+                  <th>Place</th>
+                  <th>Points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(approved.body as AwardBody).rows.map((row, i) => (
+                  <tr key={`${row.collegeId}-${i}`}>
+                    <th scope="row">
+                      <CollegeIdentity id={row.collegeId} />
+                    </th>
+                    <td>
+                      {row.rank ||
+                        (row.eligible ? "Participation" : "Not eligible")}
+                    </td>
+                    <td className="numeric">{row.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        <button
+          className="primary"
+          disabled={
+            busy ||
+            !!pending ||
+            !category.confirmed ||
+            !!unresolved.length ||
+            !schedules.length
+          }
+          onClick={() => {
+            onOpen?.();
+            setOpen(true);
+          }}
+        >
+          {approved
+            ? "Correct championship standings"
+            : "Finalize championship standings"}
+        </button>
+        <EventRevisionHistory
+          state={state}
+          categoryId={categoryId}
+          kind="award"
+        />
+      </article>
+      {open ? (
+        <StaffDialog
+          title={
+            approved
+              ? "Correct championship standings"
+              : "Finalize championship standings"
+          }
+          description={categoryLabel(category)}
+          busy={busy}
+          error={error}
+          onClose={() => setOpen(false)}
+        >
+          <ChampionshipForm
+            state={state}
+            categoryId={categoryId}
+            run={run}
+            busy={busy}
+          />
+        </StaffDialog>
+      ) : null}
     </section>
   );
 }

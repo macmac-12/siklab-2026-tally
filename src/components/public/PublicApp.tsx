@@ -47,7 +47,7 @@ export default function PublicApp({
         ? "brackets"
         : view,
   );
-  if (view === "results") query.set("limit", "20");
+  if (view === "results" || view === "schedules") query.set("limit", "20");
   query.delete("round");
   query.delete("bracket");
   if (query.get("view") === "brackets")
@@ -94,7 +94,18 @@ export default function PublicApp({
       </select>
     </label>
   );
-  const summaryData = data ? { ...data, ...data.summaries } : null;
+  const summaryData = data
+    ? {
+        ...data,
+        ...data.summaries,
+        total: data.summaries.schedules.length,
+        limit: Math.max(1, data.summaries.schedules.length),
+        page: 1,
+      }
+    : null;
+  const allCollegeQuery = new URLSearchParams(params.toString());
+  allCollegeQuery.delete("college");
+  allCollegeQuery.delete("page");
   const today =
     data?.today ||
     new Intl.DateTimeFormat("en-CA", {
@@ -112,7 +123,9 @@ export default function PublicApp({
     day: "2-digit",
   }).format(tomorrowDate);
   return (
-    <div className={`public-app ${view === "display" ? "display-mode" : ""}`}>
+    <div
+      className={`public-app public-app--${view} ${view === "display" ? "display-mode" : ""}`}
+    >
       <a className="skip-link" href="#main">
         Skip to content
       </a>
@@ -160,8 +173,10 @@ export default function PublicApp({
               {view === "results"
                 ? "Reviewed results, shared across every participating college."
                 : view === "standings"
-                  ? "Official college points from approved championship standings."
-                  : "Sports, culture, and campus pride. All times are Philippine Standard Time (Asia/Manila)."}
+                  ? "Official championship totals, including confirmed tally adjustments."
+                  : view === "schedules"
+                    ? "Choose a day or find your competition. Times are Philippine Standard Time."
+                    : "Sports, culture, and campus pride. All times are Philippine Standard Time (Asia/Manila)."}
             </p>
           </div>
           <div className="public-refresh-controls">
@@ -197,7 +212,7 @@ export default function PublicApp({
             </button>
           </div>
         ) : null}
-        {!overview && !(view === "results" && !college) ? (
+        {!overview ? (
           <div className="filter-bar" aria-label="Competition filters">
             <span className="filter-label">
               <SlidersHorizontal size={16} aria-hidden="true" /> Find your event
@@ -350,6 +365,9 @@ export default function PublicApp({
                       ["", "All dates"],
                       [today, "Today"],
                       [tomorrow, "Tomorrow"],
+                      ...(data.scheduleDates || [])
+                        .filter((date) => date !== today && date !== tomorrow)
+                        .map((date) => [date, dateLabel(date)]),
                     ].map(([value, label]) => (
                       <button
                         key={label}
@@ -434,7 +452,7 @@ export default function PublicApp({
                       </p>
                     ) : null}
                     {data.schedules.length ? (
-                      <Agenda data={data} />
+                      <Agenda data={data} collapseDays={!params.get("date")} />
                     ) : (
                       <StudentEmpty
                         title="No competitions match these filters"
@@ -448,14 +466,17 @@ export default function PublicApp({
             {view === "results" ? (
               <>
                 {!college ? (
-                  <CollegeBanners data={data} />
+                  <CollegeBanners data={data} filters={params.toString()} />
                 ) : (
                   <section>
                     <div className="section-head">
                       <h2>
                         {collegeBrand(college)?.name || displayCode(college)}
                       </h2>
-                      <Link className="text-link" href="/results">
+                      <Link
+                        className="text-link"
+                        href={`/results?${allCollegeQuery}`}
+                      >
                         All colleges
                       </Link>
                     </div>

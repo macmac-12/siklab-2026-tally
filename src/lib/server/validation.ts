@@ -5,6 +5,22 @@ const id = z.string().min(1).max(150),
   text = z.string().trim().min(1).max(200);
 const note = z.string().trim().max(2000).default("");
 export const college = z.enum(COLLEGE_IDS as [string, ...string[]]);
+export const tallyTotals = z
+  .object({
+    points: z.number().int().min(0).max(1000000),
+    gold: z.number().int().min(0).max(1000000),
+    silver: z.number().int().min(0).max(1000000),
+    bronze: z.number().int().min(0).max(1000000),
+  })
+  .strict();
+const expectedTallyTotals = z
+  .object({
+    points: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    gold: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    silver: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    bronze: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
 export const rule = z
   .object({
     podium: z.array(z.number().int().min(0).max(1000)).min(1).max(10),
@@ -84,6 +100,16 @@ export const scheduleInput = z
   })
   .strict();
 export const commandSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("tally.correct"),
+      collegeId: college,
+      expectedTotals: expectedTallyTotals,
+      totals: tallyTotals,
+      reason: z.string().trim().min(10).max(2000),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("bracket.save"),

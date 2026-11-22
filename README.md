@@ -1,6 +1,6 @@
 # Siklab 2026
 
-CSPC Intramurals schedules, approved results, and official college points. Built with Next.js, React, TypeScript and PostgreSQL. Local implementation only; deployment is a separate phase.
+CSPC Intramurals schedules, approved results, and official college points. Built with Next.js, React, TypeScript and PostgreSQL. Production uses Vercel and Supabase; local development and disposable verification remain isolated from live event data.
 
 ## Start locally
 
@@ -55,8 +55,12 @@ Any administrator can approve a correction. The previous approved result remains
 
 - **Students:** see the pinned official leaders and full college tally, follow date-grouped competition cards, explore published tournament brackets, browse college result histories, and inspect championship point breakdowns. Filters and round navigation stay in the URL. `/display` is a public projector view.
 - **Game staff:** choose an event, create its schedules, enter results, and revise rejected submissions. Unknown end times are allowed; “follows another competition” supports game succession.
-- **Administrators:** review submissions; manage accounts and assignments; confirm versioned rules and TBA disciplines.
-- **Superadministrator:** download private backups and validate/restore them. Restore requires a preview and the current password, saves a pre-restore recovery copy, and revokes every session.
+- **Administrators:** manage all event operations, review submissions, confirm versioned rules and TBA disciplines, and correct official college Points/Gold/Silver/Bronze totals with a reason and immediate-publication confirmation. Event revision history remains available.
+- **Superadministrator:** additionally manage accounts, assignments and the full system audit; download private backups and validate/restore them. Restore requires a preview and the current password, saves a pre-restore recovery copy, and revokes every session.
+
+Staff creation and editing use button-triggered modal editors with action-specific toasts. Schedule times are optional: clear either time explicitly, or clear start to remove both times and save a date-only **Time TBA** fixture. Status choices are mutually exclusive. Championship tie ordering and ranked rule points use structured controls instead of comma-separated text.
+
+Manual tally corrections are immutable signed offsets, separate from approved championship awards. Staff enter desired totals and confirm the before/after values; later awards continue adding normally. Backup version 4 preserves these corrections, and older version 2/3 backups remain restorable with an empty correction ledger. Competition reset clears corrections. After corrections have been used, any code rollback must retain correction-aware tally calculation.
 
 See [role guides](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), [verification](docs/VERIFICATION.md), and [roadmap](docs/ROADMAP.md).
 

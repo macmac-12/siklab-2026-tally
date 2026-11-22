@@ -8,6 +8,7 @@ import "./theme.css";
 import "./globals.css";
 import "./public.css";
 import "./staff.css";
+import "./ui.css";
 export const metadata: Metadata = {
   title: "SIKLAB 2026 · Official Tally",
   description: "Official CSPC Intramurals score tally",

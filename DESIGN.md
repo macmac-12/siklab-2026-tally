@@ -59,7 +59,7 @@ Self-hosted Barlow Condensed 600/700 for display headings, Inter Variable for in
 
 ## Elevation & Depth
 
-Layered charcoal surfaces with restrained borders make cards and controls readable without pure black. The light alternative retains flat white surfaces and subtle gray canvases. Dark scoreboard headers carry hierarchy in both themes; no heavy shadows or decorative floating panels.
+Layered charcoal surfaces with restrained borders make cards and controls readable without pure black. The light alternative retains white surfaces and subtle gray canvases. Theme-owned shadow-card and shadow-panel tokens give the official tally, timeline and compact fixture cards restrained depth. Low-opacity diagonal college-color gradients express the competing teams; an approved single-college winner receives a subtle winner tint and explicit label. Dark scoreboard headers retain hierarchy in both themes.
 
 ## Shapes
 
@@ -73,7 +73,9 @@ ThemeProvider owns the document theme and browser preference; ThemeScript initia
 
 Foreground/background pairs change together rather than fading through low-contrast intermediate colors. Button and link micro-interactions animate borders only; reduced motion disables those transitions too.
 
-PublicApp owns filters and navigation; ScoreViews owns approved results, official standings and leaders; StudentViews owns date-grouped cards and college result banners; BracketView owns connected rounds. StaffApp.run owns staff busy/error/success and idempotent retries. Existing staff editors and native dialog remain canonical. Recovery previews use the established inline editor rather than adding another modal: neutral cancel comes before the final danger action, while upload progress and errors remain in the recovery panel. Password reveal controls retain fixed geometry. Native select/date/time popups retain platform behavior. Lucide icons supplement labels.
+PublicApp owns filters and navigation; ScoreViews owns approved results, official standings and leaders; StudentViews owns date-grouped cards and college result banners; BracketView owns connected rounds. StaffApp.run owns staff busy/error/success and idempotent retries. Shared shadcn/Radix primitives own buttons, dialogs, confirmations and status choices; StaffDialog owns bounded modal editors, dirty-close confirmation and focus restoration. Sonner owns action-specific transient feedback without shifting page content. Recovery previews remain inside their modal with upload progress and persistent errors. Password reveal controls retain fixed geometry. Native select/date/time popups retain platform behavior. Lucide icons supplement labels. Tailwind supplies component utilities without Preflight; ui.css adapts the primitives to the canonical Siklab tokens and portal surfaces.
+
+Manual tally corrections are an authorized event operation for administrators and superadministrators. The editor accepts desired Points/Gold/Silver/Bronze totals, then shows a warning, reason and before/after confirmation. Public totals combine championship awards and separate correction offsets; actual awarded-category counts remain unchanged. Full account and system history, including correction audit details, remains superadministrator-only.
 
 ## Do's and Don'ts
 

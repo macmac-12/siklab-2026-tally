@@ -20,6 +20,19 @@ export const dateLabel = (value: string) =>
     day: "numeric",
     weekday: "short",
   }).format(new Date(`${value}T12:00:00+08:00`));
+export function scheduleTimeLabel(
+  schedule: Pick<
+    import("@/lib/model").Schedule,
+    "startsAt" | "endsAt" | "followsId"
+  >,
+  schedules: Pick<import("@/lib/model").Schedule, "id" | "title">[] = [],
+) {
+  if (schedule.startsAt)
+    return `${timeLabel(schedule.startsAt)}${schedule.endsAt ? ` – ${timeLabel(schedule.endsAt)}` : ""}`;
+  if (schedule.followsId)
+    return `After ${schedules.find((item) => item.id === schedule.followsId)?.title || "preceding competition"}`;
+  return "Time TBA";
+}
 export function download(name: string, content: string, type = "text/csv") {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement("a");

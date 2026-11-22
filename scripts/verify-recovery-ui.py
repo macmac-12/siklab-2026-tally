@@ -58,15 +58,15 @@ try:
         code('''
           const user={id:'ui-admin',name:'UI verification',email:'ui@test.invalid',role:'superadmin',active:true,mustReset:false,assignments:[]};
           await page.route('**/api/auth/login',route=>route.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'}));
-          await page.route('**/api/staff/state',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({user,users:[user],categories:[],disciplines:[],entries:[],schedules:[],revisions:[],brackets:[],audit:[],version:1,updatedAt:new Date().toISOString()})}));
+          await page.route('**/api/staff/state',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({user,users:[user],categories:[],disciplines:[],entries:[],schedules:[],revisions:[],brackets:[],audit:[],revisionActors:[],tallyAdjustments:[],version:1,updatedAt:new Date().toISOString()})}));
         ''')
     code('await page.getByLabel("Email",{exact:true}).fill(' + json.dumps(fixture['email']) + ');'
          'await page.getByLabel("Password",{exact:true}).fill(' + json.dumps(fixture['password']) + ');'
          'await page.getByRole("button",{name:/^Sign in/}).click();'
          'await page.getByRole("button",{name:"Backup & recovery",exact:true}).click();'
-         'await page.getByRole("heading",{name:"Backup & recovery",level:2,exact:true}).waitFor();')
+         'await page.getByRole("heading",{name:"Backup & recovery",level:1,exact:true}).waitFor();')
     code('''
-      const counts={accounts:1,categories:49,disciplines:48,entries:343,schedules:2,revisions:3,awards:1,brackets:1};
+      const counts={accounts:1,categories:49,disciplines:48,entries:343,schedules:2,revisions:3,awards:1,brackets:1,tally_adjustments:1};
       const json=body=>({status:200,contentType:'application/json',body:JSON.stringify(body)});
       await page.route('**/api/staff/backup', route=>route.fulfill(json({url:new URL('/recovery-download.json',page.url()).href,filename:'siklab-ui-backup.json',expiresIn:60})));
       await page.route('**/recovery-download.json', route=>route.fulfill({status:200,contentType:'application/json',headers:{'content-disposition':'attachment; filename="siklab-ui-backup.json"'},body:'{"testOnly":true}'}));
@@ -85,7 +85,7 @@ try:
       });
       await page.route('**/api/staff/reset', async route=>{
         const body=route.request().postDataJSON();
-        if(body.preview)return route.fulfill(json({operationId:'ui-reset',preview:true,checksum:'ui-reset-checksum',counts:{schedules:2,revisions:3,awards:1,brackets:1},revision:1,expiresAt:new Date(Date.now()+900000).toISOString()}));
+        if(body.preview)return route.fulfill(json({operationId:'ui-reset',preview:true,checksum:'ui-reset-checksum',counts:{schedules:2,revisions:3,awards:1,brackets:1,tally_adjustments:1},revision:1,expiresAt:new Date(Date.now()+900000).toISOString()}));
         if(body.operationId!=='ui-reset'||body.confirmation!=='RESET EVENT DATA'||body.checksum!=='ui-reset-checksum')throw Error('Reset safeguards missing');
         return route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({error:'Current password is incorrect.'})});
       });
@@ -93,11 +93,13 @@ try:
     check('private backup downloads as an attachment', '''
       const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Download backup',exact:true}).click();const download=await pending;
       if(download.suggestedFilename()!=='siklab-ui-backup.json')throw Error('Backup did not download');
-      await page.getByRole('status').filter({hasText:'Backup download started'}).waitFor();return {attachment:true};
+      await page.locator('[data-sonner-toast]').filter({hasText:'Backup download started'}).first().waitFor();return {attachment:true};
     ''')
     check('unsupported file is rejected before upload', '''
+      await page.getByRole('button',{name:'Restore backup',exact:true}).click();
+      await page.getByRole('dialog',{name:'Restore a backup',exact:true}).waitFor();
       await page.getByLabel('Backup file',{exact:true}).setInputFiles(''' + json.dumps(str(invalid_file.resolve())) + ''');
-      await page.getByRole('alert').filter({hasText:'Choose a non-empty JSON backup'}).waitFor();
+      await page.getByRole('dialog').getByRole('alert').filter({hasText:'Choose a non-empty JSON backup'}).first().waitFor();
       if(await page.getByRole('button',{name:'Validate and preview',exact:true}).isEnabled())throw Error('Invalid file accepted');return {clientValidation:true};
     ''')
     check('large backup uploads directly and shows server preview', '''
@@ -116,41 +118,42 @@ try:
       await page.locator('.form-validation').waitFor();
       await page.getByLabel('Replace the current dataset with this validated backup and sign everyone out',{exact:true}).check();
       await page.getByRole('button',{name:'Restore and sign out',exact:true}).click();
-      await page.getByRole('alert').filter({hasText:'Current password is incorrect.'}).waitFor();
+      await page.getByRole('dialog').getByRole('alert').filter({hasText:'Current password is incorrect.'}).first().waitFor();
       await page.getByRole('heading',{name:'Validated backup contents',exact:true}).waitFor();
       if(!await page.getByLabel('Backup file',{exact:true}).inputValue())throw Error('Selected file lost');
       return {confirmationRequired:true,serverFailureRetainsFile:true};
     ''')
     check('reset requires typed confirmation and preserves retained-data explanation', '''
-      await page.getByRole('button',{name:'Preview competition reset',exact:true}).click();await page.getByRole('heading',{name:'Competition records to remove',exact:true}).waitFor();
+      await page.getByRole('dialog').getByRole('button',{name:'Close Restore a backup',exact:true}).click();await page.getByRole('alertdialog').getByRole('button',{name:'Discard changes',exact:true}).click();await page.getByRole('button',{name:'Review competition reset',exact:true}).click();await page.getByRole('button',{name:'Preview competition reset',exact:true}).click();await page.getByRole('heading',{name:'Competition records to remove',exact:true}).waitFor();
       await page.getByText('Staff accounts, assignments, college entries, configured rules and administrative history stay available.',{exact:false}).waitFor();
       await page.getByLabel('Current password',{exact:true}).fill('invalid-ui-password');
       await page.getByLabel('Type RESET EVENT DATA to confirm',{exact:true}).fill('RESET');
       await page.getByRole('button',{name:'Reset competition data and sign out',exact:true}).click();await page.locator('.form-validation').waitFor();
       await page.getByLabel('Type RESET EVENT DATA to confirm',{exact:true}).fill('RESET EVENT DATA');
-      await page.getByRole('button',{name:'Reset competition data and sign out',exact:true}).click();await page.getByRole('alert').filter({hasText:'Current password is incorrect.'}).waitFor();
-      await page.getByRole('button',{name:'Cancel reset',exact:true}).click();
-      if(!await page.getByRole('button',{name:'Preview competition reset',exact:true}).evaluate(el=>el===document.activeElement))throw Error('Cancel lost trigger focus');
+      await page.getByRole('button',{name:'Reset competition data and sign out',exact:true}).click();await page.getByRole('dialog').getByRole('alert').filter({hasText:'Current password is incorrect.'}).first().waitFor();
+      await page.getByRole('button',{name:'Cancel reset',exact:true}).click();await page.getByRole('alertdialog').getByRole('button',{name:'Discard changes',exact:true}).click();
+      if(!await page.getByRole('button',{name:'Review competition reset',exact:true}).evaluate(el=>el===document.activeElement))throw Error('Cancel lost trigger focus');
       return {exactPhraseRequired:true,retainedDataExplained:true,cancelRestoresFocus:true};
     ''')
     check('expired reset preview disables execution', '''
       await page.unroute('**/api/staff/reset');await page.route('**/api/staff/reset',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({operationId:'expired-ui-reset',preview:true,checksum:'expired',counts:{schedules:2},revision:1,expiresAt:new Date(Date.now()-1000).toISOString()})}));
-      await page.getByRole('button',{name:'Preview competition reset',exact:true}).click();await page.getByText('This preview has expired. Preview the reset again before continuing.',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'Review competition reset',exact:true}).click();await page.getByRole('button',{name:'Preview competition reset',exact:true}).click();await page.getByText('This preview has expired. Preview the reset again before continuing.',{exact:true}).waitFor();
       if(await page.getByRole('button',{name:'Reset competition data and sign out',exact:true}).isEnabled())throw Error('Expired reset executable');
       return {expiredDisabled:true};
     ''')
     check('recovery preview fits phone and both themes', '''
-      const layouts=[];for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme){await page.locator('.theme-toggle').click();await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);}for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});const actual=await page.evaluate(()=>document.documentElement.scrollWidth);if(actual>width)throw Error('Recovery panel overflows '+width);layouts.push({theme,width,actual});}
+      const layouts=[];for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme){const other=await page.context().newPage();await other.goto('/');await other.locator('.theme-toggle').waitFor();if(await other.locator('html').getAttribute('data-theme')!==theme)await other.locator('.theme-toggle').click();await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);await other.close();}for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});const actual=await page.evaluate(()=>document.documentElement.scrollWidth);if(actual>width)throw Error('Recovery panel overflows '+width);layouts.push({theme,width,actual});}
       await page.setViewportSize({width:375,height:900});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`output/playwright/recovery-ui-${theme}-phone.png`,fullPage:true});
       await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`output/playwright/recovery-ui-${theme}-desktop.png`,fullPage:true});}return layouts;
     ''')
     check('successful restore returns to sign-in', '''
-      await page.getByRole('button',{name:'Cancel reset',exact:true}).click();
+      await page.getByRole('button',{name:'Cancel reset',exact:true}).click();await page.getByRole('button',{name:'Restore backup',exact:true}).click();await page.getByLabel('Backup file',{exact:true}).setInputFiles(''' + json.dumps(str(valid_file.resolve())) + ''');
       await page.getByRole('button',{name:'Validate and preview',exact:true}).click();await page.getByRole('heading',{name:'Validated backup contents',exact:true}).waitFor();
       await page.getByLabel('Current password',{exact:true}).fill('valid-ui-password');
       await page.getByLabel('Replace the current dataset with this validated backup and sign everyone out',{exact:true}).check();
-      await page.getByRole('button',{name:'Restore and sign out',exact:true}).click();await page.waitForURL('**/staff/login');
-      return {redirectedToSignIn:true,maintenanceResponseMocked:true};
+      const unexpectedDialogs=[];const onDialog=async dialog=>{unexpectedDialogs.push(dialog.type());await dialog.dismiss();};page.on('dialog',onDialog);
+      await page.getByRole('button',{name:'Restore and sign out',exact:true}).click();if(unexpectedDialogs.length)throw Error('Unexpected native dialog after confirmed restore: '+unexpectedDialogs.join(','));await page.waitForURL('**/staff/login');await page.waitForLoadState('domcontentloaded');await page.getByRole('button',{name:'Sign in',exact:true}).waitFor();page.off('dialog',onDialog);if(unexpectedDialogs.length)throw Error('Unexpected native dialog after confirmed restore: '+unexpectedDialogs.join(','));
+      return {redirectedToSignIn:true,nativeDialogs:0,maintenanceResponseMocked:true};
     ''')
     check('public polling waits five minutes, pauses hidden tabs and supports manual refresh', '''
       let reads=0;const cookieHeaders=[];
@@ -177,6 +180,10 @@ try:
       return {initialReads:initial,automaticRefreshes:1,hiddenReads:0,visibilityRefreshes:1,manualRefreshes:1,staffCookiesSent:0};
     ''')
 except Exception as error:
+    try:
+        code("await page.screenshot({path:'output/playwright/verify-recovery-ui-failure.png',fullPage:true});return true;")
+    except Exception:
+        pass
     checks.append({'name': 'Recovery UI interruption', 'pass': False, 'error': str(error)})
     print('FAIL', str(error), flush=True)
 finally:

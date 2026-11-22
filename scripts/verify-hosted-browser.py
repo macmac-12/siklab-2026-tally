@@ -2,7 +2,8 @@
 """Read-only browser acceptance for the canonical public Siklab deployment.
 
 Uses real network responses throughout. Does not sign in, fill credentials, run
-mutations, or mock APIs. Run after the clean event baseline has been restored.
+mutations, or mock APIs. Safe to run against an event installation with saved records.
+Set HOSTED_EXPECT_EMPTY=1 only for explicit pre-launch clean-baseline acceptance.
 """
 import json
 import os
@@ -93,10 +94,12 @@ try:
       const api=await page.request.get('/api/public/overview?view=overview');
       if(!api.ok())throw Error(`Public API returned ${api.status()}`);
       const data=await api.json();
-      const expectedCounts={categories:49,disciplines:48,entries:343,schedules:0,results:0,awards:0,brackets:0};
+      const requireEmpty=''' + json.dumps(os.environ.get('HOSTED_EXPECT_EMPTY') == '1') + ''';
+      const expectedCounts={categories:49,disciplines:48,entries:343,...(requireEmpty?{schedules:0,results:0,awards:0,brackets:0}:{})};
       const counts=Object.fromEntries(Object.keys(expectedCounts).map(key=>[key,data[key]?.length]));
-      if(Object.keys(expectedCounts).some(key=>counts[key]!==expectedCounts[key]))throw Error(`Final database is not the clean seeded baseline: ${JSON.stringify(counts)}`);
-      if(['users','accounts','audit','sessions','assignments'].some(key=>Object.hasOwn(data,key)))throw Error('Private data exposed in public API');
+      if(Object.keys(expectedCounts).some(key=>counts[key]!==expectedCounts[key]))throw Error(`Unexpected public catalog or requested baseline: ${JSON.stringify(counts)}`);
+      if(['users','accounts','audit','sessions','assignments','revisionActors'].some(key=>Object.hasOwn(data,key)))throw Error('Private data exposed in public API');
+      if((data.tallyAdjustments||[]).some(row=>Object.keys(row).some(key=>!['collegeId','points','gold','silver','bronze'].includes(key))))throw Error('Private correction details exposed in public API');
       const routes=['/','/schedules','/results','/standings','/display','/staff/login'];
       for(const appearance of ['dark','light']) {
         await ready('/');await theme(appearance);

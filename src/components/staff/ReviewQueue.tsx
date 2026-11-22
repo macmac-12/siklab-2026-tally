@@ -1,11 +1,20 @@
 "use client";
 import StaffForm from "./StaffForm";
-import type { StaffSnapshot, AwardBody, ResultBody } from "@/lib/model";
+import { useEffect, useState } from "react";
+import StaffDialog, { useStaffDialogClose } from "@/components/ui/StaffDialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
+import type {
+  StaffSnapshot,
+  AwardBody,
+  ResultBody,
+  Revision,
+} from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import type { Run } from "./client";
 import CollegeIdentity from "../shared/CollegeIdentity";
 import { displayEntryLabel } from "@/lib/branding";
-function Summary({
+export function Summary({
   state,
   body,
   kind,
@@ -81,107 +90,258 @@ function Summary({
     </>
   );
 }
-export default function ReviewQueue({
+function ReviewForm({
+  revision,
   state,
   run,
   busy,
 }: {
+  revision: Revision;
   state: StaffSnapshot;
   run: Run;
   busy: boolean;
 }) {
-  const pending = state.revisions.filter((r) => r.status === "pending");
+  const { complete } = useStaffDialogClose()!;
+  const [decision, setDecision] = useState("approve");
+  const fixture = state.schedules.find((s) => s.id === revision.scheduleId);
+  const before = state.revisions.find((r) => r.id === revision.baseId);
+  return (
+    <div className="review-dialog-content">
+      {fixture ? (
+        <p className="muted">
+          {fixture.entryIds
+            .map((id) => {
+              const entry = state.entries.find((e) => e.id === id);
+              return entry ? displayEntryLabel(entry) : id;
+            })
+            .join(" · ")}{" "}
+          · {fixture.stage} · {fixture.venue}
+        </p>
+      ) : null}
+      {revision.reason ? (
+        <p className="schedule-note">Correction reason: {revision.reason}</p>
+      ) : null}
+      <div className={`review-comparison ${before ? "has-before" : ""}`}>
+        {before ? (
+          <section>
+            <h3>Currently published</h3>
+            <Summary state={state} body={before.body} kind={before.kind} />
+          </section>
+        ) : null}
+        <section>
+          <h3>
+            Submitted {revision.kind === "award" ? "championship" : "result"}
+          </h3>
+          <Summary state={state} body={revision.body} kind={revision.kind} />
+        </section>
+      </div>
+      {revision.kind === "award" && (revision.body as AwardBody).ruling ? (
+        <p>Official ruling: {(revision.body as AwardBody).ruling}</p>
+      ) : null}
+      <StaffForm
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          if (
+            await run({
+              action: "review",
+              id: revision.id,
+              decision,
+              reason: data.get("reason"),
+            })
+          )
+            complete();
+        }}
+      >
+        <fieldset>
+          <legend>Review decision</legend>
+          <RadioGroup
+            value={decision}
+            onValueChange={setDecision}
+            className="review-decision-options"
+          >
+            <label className="check">
+              <RadioGroupItem value="approve" />
+              Approve and publish
+            </label>
+            <label className="check">
+              <RadioGroupItem value="reject" />
+              Return for revision
+            </label>
+          </RadioGroup>
+        </fieldset>
+        <label>
+          Review note {decision === "reject" ? "(required)" : "(optional)"}
+          <textarea
+            className="resize-none"
+            name="reason"
+            required={decision === "reject"}
+            maxLength={2000}
+          />
+        </label>
+        <div className="actions">
+          <button
+            className={decision === "approve" ? "primary" : ""}
+            disabled={busy}
+          >
+            {decision === "approve"
+              ? "Approve and publish"
+              : "Return for revision"}
+          </button>
+        </div>
+      </StaffForm>
+    </div>
+  );
+}
+function compactSummary(revision: Revision) {
+  if (revision.kind === "award")
+    return (revision.body as AwardBody).rows
+      .map(
+        (row) =>
+          `${row.collegeId === "BUHI" ? "BC" : row.collegeId} ${row.points} pts`,
+      )
+      .join(" · ");
+  const body = revision.body as ResultBody;
+  return body.scoreA !== null
+    ? `${body.scoreA} – ${body.scoreB}${body.outcome !== "normal" ? " · Forfeit ruling" : ""}`
+    : `${body.placings.filter((p) => p.rank !== null).length} ranked entries`;
+}
+export default function ReviewQueue({
+  state,
+  run,
+  busy,
+  error = "",
+  onOpen,
+}: {
+  state: StaffSnapshot;
+  run: Run;
+  busy: boolean;
+  error?: string;
+  onOpen?: () => void;
+}) {
+  const [page, setPage] = useState(1),
+    [filter, setFilter] = useState(""),
+    [selected, setSelected] = useState<Revision | null>(null);
+  const pending = state.revisions.filter(
+    (r) => r.status === "pending" && (!filter || r.categoryId === filter),
+  );
+  const pages = Math.max(1, Math.ceil(pending.length / 10));
+  useEffect(() => setPage((value) => Math.min(value, pages)), [pages]);
   return (
     <section className="stack">
       <div className="section-head">
         <h2>Review queue</h2>
-        <span className="count">{pending.length} pending</span>
+        <Badge variant="outline">{pending.length} pending</Badge>
       </div>
+      <label className="event-picker">
+        Filter event
+        <select
+          value={filter}
+          onChange={(event) => {
+            setFilter(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All events</option>
+          {state.categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {categoryLabel(category)}
+            </option>
+          ))}
+        </select>
+      </label>
       {!pending.length ? (
         <div className="panel empty">
           <h3>All caught up.</h3>
           <p>Submitted results and championship awards will appear here.</p>
         </div>
+      ) : (
+        <div className="compact-record-list" aria-label="Pending submissions">
+          {pending.slice((page - 1) * 10, page * 10).map((revision) => {
+            const fixture = state.schedules.find(
+              (s) => s.id === revision.scheduleId,
+            );
+            const category = state.categories.find(
+              (c) => c.id === revision.categoryId,
+            );
+            const actor =
+              state.revisionActors.find((u) => u.id === revision.actorId)
+                ?.name || revision.actorId;
+            return (
+              <article className="compact-record review-row" key={revision.id}>
+                <div className="compact-record-main">
+                  <span className="eyebrow">
+                    {revision.kind === "award" ? "CHAMPIONSHIP" : "RESULT"}
+                    {revision.baseId ? " · CORRECTION" : ""} ·{" "}
+                    {category ? categoryLabel(category) : revision.categoryId}
+                  </span>
+                  <h3>{fixture?.title || "Final championship standings"}</h3>
+                  <p className="small muted">
+                    {actor} ·{" "}
+                    {new Date(revision.createdAt).toLocaleString("en-PH", {
+                      timeZone: "Asia/Manila",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+                <strong className="review-row-summary numeric">
+                  {compactSummary(revision)}
+                </strong>
+                <button
+                  disabled={busy}
+                  aria-label={`Review ${fixture?.title || "championship standings"}`}
+                  onClick={() => {
+                    onOpen?.();
+                    setSelected(revision);
+                  }}
+                >
+                  Review
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {pending.length ? (
+        <nav className="staff-pagination" aria-label="Review queue pages">
+          <span className="small muted">
+            {(page - 1) * 10 + 1}–{Math.min(page * 10, pending.length)} of{" "}
+            {pending.length}
+          </span>
+          <button
+            disabled={page === 1 || busy}
+            onClick={() => setPage(page - 1)}
+          >
+            Previous
+          </button>
+          <span className="small">
+            Page {page} of {pages}
+          </span>
+          <button
+            disabled={page === pages || busy}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </button>
+        </nav>
       ) : null}
-      {pending.map((r) => {
-        const s = state.schedules.find((s) => s.id === r.scheduleId),
-          before = state.revisions.find((x) => x.id === r.baseId);
-        return (
-          <article className="panel editor" key={r.id}>
-            <span className="eyebrow">
-              {r.kind === "award" ? "CHAMPIONSHIP AWARD" : "COMPETITION RESULT"}{" "}
-              ·{" "}
-              {categoryLabel(
-                state.categories.find((c) => c.id === r.categoryId)!,
-              )}
-            </span>
-            <h3>{s?.title || "Final championship standings"}</h3>
-            {s ? (
-              <p className="muted">
-                {s.entryIds
-                  .map((id) => {
-                    const entry = state.entries.find((e) => e.id === id);
-                    return entry ? displayEntryLabel(entry) : id;
-                  })
-                  .join(" · ")}{" "}
-                · {s.stage} · {s.venue}
-              </p>
-            ) : null}
-            <p className="small muted">
-              Submitted by{" "}
-              {state.users.find((u) => u.id === r.actorId)?.name || r.actorId} ·{" "}
-              {new Date(r.createdAt).toLocaleString("en-PH", {
-                timeZone: "Asia/Manila",
-              })}
-            </p>
-            {r.reason ? (
-              <p className="schedule-note">Correction reason: {r.reason}</p>
-            ) : null}
-            {before ? (
-              <details>
-                <summary>Currently published version</summary>
-                <Summary state={state} body={before.body} kind={before.kind} />
-              </details>
-            ) : null}
-            <h4>Submitted result</h4>
-            <Summary state={state} body={r.body} kind={r.kind} />
-            {r.kind === "award" && (r.body as AwardBody).ruling ? (
-              <p>Official ruling: {(r.body as AwardBody).ruling}</p>
-            ) : null}
-            <StaffForm
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                await run({
-                  action: "review",
-                  id: r.id,
-                  decision: (
-                    e.nativeEvent as SubmitEvent
-                  ).submitter?.getAttribute("value"),
-                  reason: f.get("reason"),
-                });
-              }}
-            >
-              <label>
-                Review note (required when rejecting)
-                <textarea
-                  className="resize-none"
-                  name="reason"
-                  maxLength={2000}
-                />
-              </label>
-              <div className="actions">
-                <button value="reject" disabled={busy}>
-                  Return for revision
-                </button>
-                <button className="primary" value="approve" disabled={busy}>
-                  Approve and publish
-                </button>
-              </div>
-            </StaffForm>
-          </article>
-        );
-      })}
+      {selected ? (
+        <StaffDialog
+          title={
+            state.schedules.find((s) => s.id === selected.scheduleId)?.title ||
+            "Review championship standings"
+          }
+          description="Review the submitted record before publishing or returning it for revision."
+          busy={busy}
+          error={error}
+          onClose={() => setSelected(null)}
+        >
+          <ReviewForm revision={selected} state={state} run={run} busy={busy} />
+        </StaffDialog>
+      ) : null}
     </section>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "../public-projections";
 import { transaction, scheduleRow, fail } from "./store";
 import { readPublicSnapshot } from "./cache";
+import { tallyAdjustments } from "./tally";
 import type { PublicSnapshot, ResultBody } from "../model";
 import type { Category, Discipline } from "../catalog";
 type Complete = PublicSnapshot & { brackets: PublicBracket[] };
@@ -76,6 +77,7 @@ async function load(): Promise<Complete> {
     }));
     const row = (await db.query("SELECT * FROM system_state")).rows[0];
     return {
+      tallyAdjustments: await tallyAdjustments(db),
       brackets: (await bracketRecords(db))
         .filter((b) => b.published)
         .map((b) => ({
@@ -125,7 +127,7 @@ function projectPublicState(
   const view = params.get("view"),
     category = params.get("category") || "";
   const agenda = dailyAgenda(state, params.get("college") || "");
-  const collegeResults = collegeSummaries(state);
+  const collegeResults = collegeSummaries(state, params);
   let matches = chronological(state.schedules).filter(
     (s) =>
       matchesFilters(s, state!, params) &&
@@ -180,6 +182,7 @@ function projectPublicState(
     page: effectivePage,
     limit: effectiveLimit,
     venues: [...new Set(state.schedules.map((s) => s.venue))].sort(),
+    scheduleDates: [...new Set(state.schedules.map((s) => s.date))].sort(),
     agendaDate: agenda.date,
     today: agenda.today,
     collegeResults,

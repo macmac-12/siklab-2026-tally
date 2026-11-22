@@ -14,7 +14,7 @@ The address preserves filters, event, bracket, round and page. All times use Asi
 
 ## Game staff
 
-Your administrator gives you `/staff/login` and account credentials. Change a temporary password before continuing. My events lists your assigned categories.
+Your superadministrator provides `/staff/login` and account credentials. Change a temporary password before continuing. My events lists your assigned categories.
 
 1. Choose the event and select Schedule competition.
 2. Select a two-side match or a placing competition. Enter the actual participants, stage, specific court, date and time. Use succession when games follow one another. Choose an approved E-games series length explicitly.
@@ -45,18 +45,24 @@ Review queue contains private pending results and championship awards. Check eve
 
 Corrections preserve the currently published version until approval. Any administrator may approve one, including its author. If a result affects a published award, the review card includes the new championship points and both changes publish together. Changed source data makes an older award proposal stale; reject it and request a new submission.
 
-Accounts supports event assignments, disabling access and temporary password resets. Superadministrators manage administrator roles. Disabling/resetting an account revokes its sessions; changing assignments takes effect on the next request. An account cannot demote or disable itself.
+Administrators can manage event operations, reviews, schedules, rules and tally corrections. Only superadministrators can manage accounts, assignments and temporary password resets. Disabling/resetting an account revokes its sessions; changing assignments takes effect on the next request. An account cannot demote or disable itself.
 
 Official rules records the source/reason for changes. Published awards retain their approved historical points until a separate reviewed correction. Confirm relay label normalization and TBA jumping events only after committee approval. Do not use placeholder rules to unlock unconfirmed points.
 
-History shows recent actions with stable actor identities, reasons and before/after data. Full history remains in the database and backup.
+Event revision history remains available to administrators. The History tab is superadministrator-only and shows recent system actions with stable actor identities, reasons and before/after data. Full history remains in the database and backup.
+
+In **Tally corrections**, choose a college and **Correct tally**. Enter the desired Points, Gold, Silver and Bronze totals and a reason of at least ten characters. **Review correction** shows the before/after values and differences. **Confirm and publish correction** changes the public tally immediately. A concurrent change rejects stale confirmation. The system preserves championship awards separately, and future approved awards continue adding normally. Make another correction to reverse an earlier manual change. If an award correction would make any total negative, reconcile the manual correction first.
+
+Staff lists use action buttons to open modal editors. Cancel/Escape warns before discarding unsaved changes; failed saves keep the entered values. Action toasts acknowledge success or failure, and actionable errors remain in the dialog. The compact review queue has ten submissions per page; open **Review** to compare and approve/return a submission. Championship tie ordering uses Move up/down controls, and rules use one points input for each rank.
+
+Schedule start/end times have explicit Clear buttons. Clearing start clears both times; saving without either creates a date-only **Time TBA** fixture. The date remains required. Choose one schedule status using its radio option. Fixed-time and succession validation still applies.
 
 ## Backup operator
 
 Only the superadministrator can export/restore private backups. Backups include password hashes and internal history; store them privately. They omit sessions and login-attempt records.
 
-Download Backup regularly. To restore, select a version-2 or version-3 backup, validate it, inspect record counts, enter your current password and confirm replacement. The server saves a pre-restore copy under `data/backups/`, validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
+Download Backup regularly. To restore, select a version-2, version-3 or version-4 backup, validate it, inspect record counts in the recovery dialog, enter your current password and confirm replacement. The server saves a private pre-restore safety copy (Supabase Storage when hosted, local backup directory when developing), validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
 
 Keep the PostgreSQL volume and independent copies of backups. A successful backup download alone is not proof of recoverability; rehearse restoration into a separate local database.
 
-Backup version 3 includes bracket drafts and publications. Version-2 restores are accepted with no brackets; restoration replaces the entire saved dataset after the existing preview/password checks.
+Backup version 4 includes bracket drafts/publications and the manual tally correction ledger. Version-2/3 restores are accepted with no manual corrections; version 2 also has no brackets. Restoration replaces the entire saved dataset after the existing preview/password checks. Competition reset clears manual corrections as well as schedules, results, awards and brackets, retaining account/configuration history.

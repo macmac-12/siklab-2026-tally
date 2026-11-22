@@ -7,6 +7,10 @@ import { todayManila } from "../shared/format";
 import type { Run } from "./client";
 import { displayCode, displayEntryLabel } from "@/lib/branding";
 import { CollegeCrest } from "../shared/CollegeIdentity";
+import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import { useStaffDialogClose } from "../ui/StaffDialog";
 function localTime(iso: string | null) {
   return iso
     ? new Date(Date.parse(iso) + 8 * 3600000).toISOString().slice(11, 16)
@@ -27,6 +31,16 @@ export default function ScheduleEditor({
   close: () => void;
   busy: boolean;
 }) {
+  const dialog = useStaffDialogClose();
+  const [startTime, setStartTime] = useState(
+    localTime(initialExisting?.startsAt || null),
+  );
+  const [endTime, setEndTime] = useState(
+    localTime(initialExisting?.endsAt || null),
+  );
+  const [status, setStatus] = useState<Schedule["status"]>(
+    initialExisting?.status || "upcoming",
+  );
   const [existing] = useState(initialExisting);
   const [category, setCategory] = useState(
       existing?.categoryId || categoryId || state.categories[0]?.id || "",
@@ -52,7 +66,7 @@ export default function ScheduleEditor({
     <section className="panel editor">
       <div className="section-head">
         <h2>{existing ? "Edit competition" : "Schedule a competition"}</h2>
-        <button type="button" onClick={close}>
+        <button type="button" onClick={dialog?.requestClose || close}>
           Close
         </button>
       </div>
@@ -88,11 +102,14 @@ export default function ScheduleEditor({
                   ? null
                   : new Date(`${date}T${end}:00+08:00`).toISOString(),
               followsId: succession ? f.get("followsId") : null,
-              status: f.get("status"),
+              status,
               reason: f.get("reason"),
             },
           });
-          if (ok) close();
+          if (ok) {
+            if (dialog) dialog.complete();
+            else close();
+          }
         }}
       >
         <div className="form-grid">
@@ -189,8 +206,7 @@ export default function ScheduleEditor({
         </div>
         {kind === "placing" && cat?.aggregation === "subpoints" ? (
           <label className="check">
-            <input
-              type="checkbox"
+            <Checkbox
               name="isFinal"
               defaultChecked={existing?.isFinal ?? true}
             />
@@ -204,13 +220,12 @@ export default function ScheduleEditor({
           <div className="checks">
             {entries.map((en) => (
               <label className="check" key={en.id}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selected.includes(en.id)}
                   disabled={locked}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     setSelected((v) =>
-                      e.target.checked
+                      checked === true
                         ? [...v, en.id]
                         : v.filter((id) => id !== en.id),
                     )
@@ -255,10 +270,13 @@ export default function ScheduleEditor({
           </label>
         </div>
         <label className="check">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={succession}
-            onChange={(e) => setSuccession(e.target.checked)}
+            onCheckedChange={(checked) => {
+              setSuccession(checked === true);
+              setStartTime("");
+              setEndTime("");
+            }}
           />
           Starts after another competition
         </label>
@@ -289,38 +307,88 @@ export default function ScheduleEditor({
           <div className="form-grid">
             <label>
               Start time (Manila)
-              <input
-                type="time"
-                name="start"
-                required
-                defaultValue={localTime(existing?.startsAt || null)}
-              />
+              <span className="time-field">
+                <input
+                  type="time"
+                  name="start"
+                  aria-label="Start time (Manila)"
+                  value={startTime}
+                  onChange={(event) => {
+                    setStartTime(event.target.value);
+                    if (!event.target.value) setEndTime("");
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!startTime || busy}
+                  onClick={() => {
+                    setStartTime("");
+                    setEndTime("");
+                    dialog?.markDirty();
+                  }}
+                  aria-label="Clear start time"
+                >
+                  Clear
+                </Button>
+              </span>
             </label>
             <label>
               End time (optional)
-              <input
-                type="time"
-                name="end"
-                defaultValue={localTime(existing?.endsAt || null)}
-              />
+              <span className="time-field">
+                <input
+                  type="time"
+                  name="end"
+                  aria-label="End time (optional)"
+                  disabled={!startTime}
+                  value={endTime}
+                  onChange={(event) => setEndTime(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!endTime || busy}
+                  onClick={() => {
+                    setEndTime("");
+                    dialog?.markDirty();
+                  }}
+                  aria-label="Clear end time"
+                >
+                  Clear
+                </Button>
+              </span>
             </label>
           </div>
         )}
+        {!succession && !startTime ? (
+          <p className="muted small">
+            Time TBA · save the date now and add a time later.
+          </p>
+        ) : null}
+        <fieldset>
+          <legend>Status</legend>
+          <RadioGroup
+            value={status}
+            onValueChange={(value) => {
+              setStatus(value as Schedule["status"]);
+              dialog?.markDirty();
+            }}
+            aria-label="Schedule status"
+          >
+            {["upcoming", "ongoing", "completed", "postponed", "cancelled"].map(
+              (s) => (
+                <label className="status-choice" key={s}>
+                  <RadioGroupItem
+                    value={s}
+                    aria-label={s[0].toUpperCase() + s.slice(1)}
+                  />
+                  {s[0].toUpperCase() + s.slice(1)}
+                </label>
+              ),
+            )}
+          </RadioGroup>
+        </fieldset>
         <div className="form-grid">
-          <label>
-            Status
-            <select name="status" defaultValue={existing?.status || "upcoming"}>
-              {[
-                "upcoming",
-                "ongoing",
-                "completed",
-                "postponed",
-                "cancelled",
-              ].map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </label>
           <label>
             Public change / cancellation reason
             <input

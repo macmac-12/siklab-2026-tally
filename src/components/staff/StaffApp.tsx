@@ -17,23 +17,29 @@ import {
   ShieldCheck,
   Trophy,
   Users,
+  SlidersHorizontal,
 } from "lucide-react";
 import CollegeIdentity from "../shared/CollegeIdentity";
-import type { StaffSnapshot, User } from "@/lib/model";
+import type { Audit, StaffSnapshot, User } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import Brand from "../shared/Brand";
 import ThemeToggle from "../shared/ThemeToggle";
-import { dateLabel, timeLabel } from "../shared/format";
+import { dateLabel, scheduleTimeLabel } from "../shared/format";
 import { api } from "./client";
 import ScheduleEditor from "./ScheduleEditor";
 import ResultEditor, { AwardEditor } from "./ResultEditor";
 import ReviewQueue from "./ReviewQueue";
+import EventRevisionHistory from "./EventRevisionHistory";
+import TallyCorrections from "./TallyCorrections";
 import {
   AccountEditor,
   BackupPanel,
   EntryEditor,
   RuleEditor,
 } from "./AdminPanels";
+import StaffDialog, { useStaffDialogClose } from "@/components/ui/StaffDialog";
+import { StaffToaster, toast } from "@/components/ui/sonner";
+
 const navigationIcons: Record<string, typeof Trophy> = {
   events: LayoutGrid,
   schedules: CalendarDays,
@@ -44,6 +50,7 @@ const navigationIcons: Record<string, typeof Trophy> = {
   history: History,
   backup: ShieldCheck,
   password: LockKeyhole,
+  tally: SlidersHorizontal,
 };
 const eventIcons = {
   Sports: Trophy,
@@ -51,11 +58,175 @@ const eventIcons = {
   Special: ShieldCheck,
   "E-games": Gamepad2,
 };
+function successLabel(body: unknown) {
+  const command = body as {
+    action?: string;
+    submit?: boolean;
+    decision?: string;
+    publish?: boolean;
+  };
+  const labels: Record<string, string> = {
+    "schedule.save": "Schedule saved.",
+    "award.submit": "Championship standings submitted for review.",
+    "account.save": "Account saved.",
+    "category.configure": "Official rule version saved.",
+    "discipline.configure": "Discipline inclusion updated.",
+    "entry.add": "College entry added.",
+    "tally.correct": "Official tally corrected.",
+    "tally.set": "Official tally corrected.",
+  };
+  if (command.action === "result.save")
+    return command.submit
+      ? "Result submitted for review."
+      : "Result draft saved.";
+  if (command.action === "review")
+    return command.decision === "approve"
+      ? "Approved and published."
+      : "Returned for revision.";
+  if (command.action === "bracket.save")
+    return command.publish
+      ? "Tournament bracket published."
+      : "Bracket draft saved.";
+  return labels[command.action || ""] || "Changes saved.";
+}
+function PasswordForm({
+  onError,
+  busy,
+  setBusy,
+}: {
+  onError: (message: string) => void;
+  busy: boolean;
+  setBusy: (value: boolean) => void;
+}) {
+  const dialog = useStaffDialogClose();
+  const [visible, setVisible] = useState(false);
+  return (
+    <StaffForm
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        setBusy(true);
+        onError("");
+        try {
+          await api("/api/auth/password", {
+            currentPassword: form.get("currentPassword"),
+            newPassword: form.get("newPassword"),
+          });
+          toast.success("Password changed. Sign in with your new password.");
+          dialog?.complete();
+          location.assign("/staff/login");
+        } catch (error) {
+          const message = (error as Error).message;
+          onError(message);
+          toast.error(message, { id: "staff-request-error", duration: 8000 });
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        Current password
+        <input
+          type={visible ? "text" : "password"}
+          name="currentPassword"
+          autoComplete="current-password"
+          required
+        />
+      </label>
+      <label>
+        New password
+        <input
+          type={visible ? "text" : "password"}
+          name="newPassword"
+          autoComplete="new-password"
+          minLength={12}
+          maxLength={72}
+          required
+        />
+      </label>
+      <button
+        type="button"
+        aria-pressed={visible}
+        onClick={() => setVisible(!visible)}
+      >
+        {visible ? "Hide passwords" : "Show passwords"}
+      </button>
+      <p className="small muted">
+        Changing your password signs you out. Use at least 12 characters.
+      </p>
+      <button className="primary" disabled={busy}>
+        Change password and sign out
+      </button>
+    </StaffForm>
+  );
+}
+function HistoryPanel({ state }: { state: StaffSnapshot }) {
+  const [page, setPage] = useState(1),
+    [selected, setSelected] = useState<Audit | null>(null);
+  const pages = Math.max(1, Math.ceil(state.audit.length / 10));
+  useEffect(() => setPage((value) => Math.min(value, pages)), [pages]);
+  return (
+    <section className="stack">
+      <p className="small muted">
+        Latest 200 actions. Full history is preserved in backups.
+      </p>
+      <div className="compact-record-list">
+        {state.audit.slice((page - 1) * 10, page * 10).map((entry) => (
+          <article className="compact-record" key={entry.id}>
+            <div className="compact-record-main">
+              <h3>{entry.action}</h3>
+              <p className="small muted">
+                {state.users.find((user) => user.id === entry.actorId)?.name ||
+                  entry.actorId}{" "}
+                ·{" "}
+                {new Date(entry.createdAt).toLocaleString("en-PH", {
+                  timeZone: "Asia/Manila",
+                })}
+              </p>
+              {entry.reason ? <p className="small">{entry.reason}</p> : null}
+            </div>
+            <button onClick={() => setSelected(entry)}>View details</button>
+          </article>
+        ))}
+      </div>
+      {!state.audit.length ? (
+        <p className="panel empty">No history records yet.</p>
+      ) : null}
+      <nav className="staff-pagination" aria-label="History pages">
+        <button disabled={page === 1} onClick={() => setPage(page - 1)}>
+          Previous
+        </button>
+        <span className="small">
+          Page {page} of {pages}
+        </span>
+        <button disabled={page === pages} onClick={() => setPage(page + 1)}>
+          Next
+        </button>
+      </nav>
+      {selected ? (
+        <StaffDialog
+          title="History details"
+          description={selected.action}
+          onClose={() => setSelected(null)}
+        >
+          <p>{selected.reason || "No reason recorded."}</p>
+          <h3>Before</h3>
+          <pre className="history-json">
+            {JSON.stringify(selected.before, null, 2)}
+          </pre>
+          <h3>After</h3>
+          <pre className="history-json">
+            {JSON.stringify(selected.after, null, 2)}
+          </pre>
+        </StaffDialog>
+      ) : null}
+    </section>
+  );
+}
 export default function StaffApp() {
   const [state, setState] = useState<StaffSnapshot | null>(null),
     [resetUser, setResetUser] = useState<User | null>(null),
     [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [tab, setTab] = useState("events"),
     [category, setCategory] = useState(""),
@@ -63,47 +234,71 @@ export default function StaffApp() {
       type: "schedule" | "result";
       id?: string;
     } | null>(null);
-  const [bracketEditor, setBracketEditor] = useState(false);
-  const keys = useRef(new Map<string, string>());
+  const [bracketEditor, setBracketEditor] = useState(false),
+    [passwordEditor, setPasswordEditor] = useState(false);
+  const keys = useRef(new Map<string, string>()),
+    submitting = useRef(false);
   const load = useCallback(async () => {
-    const s = await api<StaffSnapshot & { resetRequired?: boolean }>(
+    const snapshot = await api<StaffSnapshot & { resetRequired?: boolean }>(
       "/api/staff/state",
     );
-    if (s.resetRequired) setResetUser(s.user);
+    if (snapshot.resetRequired) setResetUser(snapshot.user);
     else {
-      setState(s);
-      setCategory((c) => c || s.categories[0]?.id || "");
+      setState(snapshot);
+      setCategory((current) => current || snapshot.categories[0]?.id || "");
     }
   }, []);
   useEffect(() => {
-    void load().catch((e) => setError(e.message));
+    void load().catch((failure) => {
+      setError(failure.message);
+      toast.error(failure.message, {
+        id: "staff-request-error",
+        duration: 8000,
+      });
+    });
   }, [load]);
   async function run(body: unknown) {
-    const text = JSON.stringify(body);
-    let key = keys.current.get(text);
+    if (submitting.current) return false;
+    const serialized = JSON.stringify(body);
+    let key = keys.current.get(serialized);
     if (!key) {
       key = crypto.randomUUID();
-      keys.current.set(text, key);
+      keys.current.set(serialized, key);
     }
+    submitting.current = true;
     setBusy(true);
     setError("");
-    setMessage("");
     try {
       await api("/api/staff/command", body, key);
-      keys.current.delete(text);
-      await load();
-      setMessage("Saved successfully.");
+      keys.current.delete(serialized);
+      toast.success(successLabel(body), { id: `staff-command-${key}` });
+      try {
+        await load();
+      } catch {
+        toast.warning(
+          "Saved, but latest records could not be loaded. Refresh to load the current records.",
+          { id: "staff-refresh-after-save", duration: 8000 },
+        );
+      }
       return true;
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (failure) {
+      const message = (failure as Error).message;
+      setError(message);
+      toast.error(message, { id: `staff-command-${key}`, duration: 8000 });
       return false;
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
+  const openEditor = (value: NonNullable<typeof editor>) => {
+    setError("");
+    setEditor(value);
+  };
   if (resetUser)
     return (
       <div className="staff-app auth-app">
+        <StaffToaster />
         <main className="shell narrow">
           <div className="auth-header">
             <Brand staff />
@@ -116,18 +311,22 @@ export default function StaffApp() {
               managing events.
             </p>
             <StaffForm
-              onSubmit={async (e) => {
-                e.preventDefault();
+              onSubmit={async (event) => {
+                event.preventDefault();
                 setBusy(true);
-                const f = new FormData(e.currentTarget);
+                const form = new FormData(event.currentTarget);
                 try {
                   await api("/api/auth/password", {
-                    currentPassword: f.get("currentPassword"),
-                    newPassword: f.get("newPassword"),
+                    currentPassword: form.get("currentPassword"),
+                    newPassword: form.get("newPassword"),
                   });
                   location.assign("/staff/login");
-                } catch (err) {
-                  setError((err as Error).message);
+                } catch (failure) {
+                  setError((failure as Error).message);
+                  toast.error((failure as Error).message, {
+                    id: "staff-request-error",
+                    duration: 8000,
+                  });
                 } finally {
                   setBusy(false);
                 }
@@ -166,10 +365,12 @@ export default function StaffApp() {
         </main>
       </div>
     );
-  const admin = !!state && state.user.role !== "officer";
+  const admin = !!state && state.user.role !== "officer",
+    superadmin = state?.user.role === "superadmin";
   const schedules =
-    state?.schedules.filter((s) => !category || s.categoryId === category) ||
-    [];
+    state?.schedules.filter(
+      (schedule) => !category || schedule.categoryId === category,
+    ) || [];
   const tabs = [
     ["events", "My events"],
     ["schedules", "Schedules"],
@@ -177,18 +378,22 @@ export default function StaffApp() {
     ...(admin
       ? [
           ["review", "Review queue"],
-          ["accounts", "Accounts"],
           ["rules", "Official rules"],
-          ["history", "History"],
+          ["tally", "Tally corrections"],
         ]
       : []),
-    ...(state?.user.role === "superadmin"
-      ? [["backup", "Backup & recovery"]]
+    ...(superadmin
+      ? [
+          ["accounts", "Accounts"],
+          ["history", "History"],
+          ["backup", "Backup & recovery"],
+        ]
       : []),
     ["password", "My password"],
   ];
   return (
     <div className="staff-app">
+      <StaffToaster />
       <a className="skip-link" href="#workspace">
         Skip to workspace
       </a>
@@ -206,8 +411,11 @@ export default function StaffApp() {
                 try {
                   await api("/api/auth/logout", {});
                   location.assign("/staff/login");
-                } catch (e) {
-                  setError((e as Error).message);
+                } catch (failure) {
+                  toast.error((failure as Error).message, {
+                    id: "staff-request-error",
+                    duration: 8000,
+                  });
                 }
               }}
             >
@@ -228,7 +436,6 @@ export default function StaffApp() {
                 onClick={() => {
                   setTab(id);
                   setEditor(null);
-                  setMessage("");
                   setError("");
                 }}
               >
@@ -239,8 +446,9 @@ export default function StaffApp() {
                 {id === "review" && state ? (
                   <span className="nav-count">
                     {
-                      state.revisions.filter((r) => r.status === "pending")
-                        .length
+                      state.revisions.filter(
+                        (revision) => revision.status === "pending",
+                      ).length
                     }
                   </span>
                 ) : null}
@@ -257,26 +465,37 @@ export default function StaffApp() {
             <button
               disabled={busy}
               onClick={() => {
+                setError("");
                 void load()
-                  .then(() => setMessage("Latest records loaded."))
-                  .catch((e) => setError(e.message));
+                  .then(() => toast.success("Latest records loaded."))
+                  .catch((failure) => {
+                    setError(failure.message);
+                    toast.error(failure.message, {
+                      id: "staff-request-error",
+                      duration: 8000,
+                    });
+                  });
               }}
             >
-              <RefreshCw size={16} aria-hidden="true" /> Refresh
+              <RefreshCw size={16} aria-hidden="true" />
+              Refresh
             </button>
           </div>
-          {error ? (
-            <div className="alert" role="alert">
-              {error}
-            </div>
-          ) : null}
-          {message ? (
-            <div className="success" role="status">
-              {message}
-            </div>
-          ) : null}
           {!state ? (
-            <p role="status">Loading your workspace…</p>
+            error ? (
+              <div className="panel empty">
+                <p role="alert">{error}</p>
+                <button
+                  onClick={() =>
+                    void load().catch((failure) => setError(failure.message))
+                  }
+                >
+                  Retry loading workspace
+                </button>
+              </div>
+            ) : (
+              <p role="status">Loading your workspace…</p>
+            )
           ) : (
             <>
               {["schedules", "awards", "rules"].includes(tab) ? (
@@ -284,14 +503,15 @@ export default function StaffApp() {
                   Event category
                   <select
                     value={category}
-                    onChange={(e) => {
-                      setCategory(e.target.value);
+                    onChange={(event) => {
+                      setCategory(event.target.value);
                       setEditor(null);
+                      setError("");
                     }}
                   >
-                    {state.categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {categoryLabel(c)}
+                    {state.categories.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {categoryLabel(item)}
                       </option>
                     ))}
                   </select>
@@ -304,31 +524,36 @@ export default function StaffApp() {
                     Championship awards are finalized separately.
                   </p>
                   <div className="event-grid">
-                    {state.categories.map((c) => {
-                      const list = state.schedules.filter(
-                        (s) => s.categoryId === c.id,
-                      );
-                      const EventIcon = eventIcons[c.group];
+                    {state.categories.map((item) => {
+                      const fixtures = state.schedules.filter(
+                          (schedule) => schedule.categoryId === item.id,
+                        ),
+                        EventIcon = eventIcons[item.group];
                       return (
                         <button
                           className="event-card"
-                          key={c.id}
+                          key={item.id}
                           onClick={() => {
-                            setCategory(c.id);
+                            setCategory(item.id);
                             setTab("schedules");
                           }}
                         >
                           <span className="event-icon">
                             <EventIcon size={20} aria-hidden="true" />
                           </span>
-                          <span className="eyebrow">{c.group}</span>
-                          <h3>{c.event}</h3>
-                          <p>{c.name}</p>
+                          <span className="eyebrow">{item.group}</span>
+                          <h3>{item.event}</h3>
+                          <p>{item.name}</p>
                           <span className="muted">
-                            {list.length} competitions ·{" "}
-                            {list.filter((s) => s.publishedId).length} approved
+                            {fixtures.length} competitions ·{" "}
+                            {
+                              fixtures.filter(
+                                (schedule) => schedule.publishedId,
+                              ).length
+                            }{" "}
+                            approved
                           </span>
-                          {!c.confirmed ? (
+                          {!item.confirmed ? (
                             <span className="hold-label">
                               Point rule awaiting confirmation
                             </span>
@@ -346,131 +571,119 @@ export default function StaffApp() {
               ) : null}
               {tab === "schedules" ? (
                 <div className="stack">
-                  <div className="actions">
+                  <div className="actions staff-toolbar">
                     <button
                       className="primary"
-                      disabled={!category}
-                      onClick={() => setEditor({ type: "schedule" })}
+                      disabled={!category || busy}
+                      onClick={() => openEditor({ type: "schedule" })}
                     >
                       + Schedule competition
+                    </button>
+                    <button
+                      disabled={!category || busy}
+                      onClick={() => {
+                        setError("");
+                        setBracketEditor(true);
+                      }}
+                    >
+                      Arrange tournament bracket
                     </button>
                     <button onClick={() => setTab("awards")}>
                       Finalize championship
                     </button>
+                    <EntryEditor
+                      key={category}
+                      state={state}
+                      categoryId={category}
+                      run={run}
+                      busy={busy}
+                      error={error}
+                      onOpen={() => setError("")}
+                    />
                   </div>
-                  <button
-                    disabled={!category || busy}
-                    onClick={() => setBracketEditor(true)}
-                  >
-                    Arrange tournament bracket
-                  </button>
-                  {bracketEditor ? (
-                    <BracketEditor
-                      serverError={error}
-                      state={state}
-                      categoryId={category}
-                      run={run}
-                      busy={busy}
-                      close={() => setBracketEditor(false)}
-                    />
-                  ) : null}
-                  <EntryEditor
-                    key={category}
-                    state={state}
-                    categoryId={category}
-                    run={run}
-                    busy={busy}
-                  />
-                  {editor?.type === "schedule" ? (
-                    <ScheduleEditor
-                      key={editor.id || `new-${category}`}
-                      state={state}
-                      existing={state.schedules.find((s) => s.id === editor.id)}
-                      categoryId={category}
-                      run={run}
-                      close={() => setEditor(null)}
-                      busy={busy}
-                    />
-                  ) : null}
-                  {editor?.type === "result" &&
-                  state.schedules.find((s) => s.id === editor.id) ? (
-                    <ResultEditor
-                      key={editor.id}
-                      state={state}
-                      schedule={state.schedules.find(
-                        (s) => s.id === editor.id,
-                      )!}
-                      run={run}
-                      close={() => setEditor(null)}
-                      busy={busy}
-                    />
-                  ) : null}
-                  {schedules.map((s) => {
-                    const latest = state.revisions.find(
-                      (r) => r.scheduleId === s.id,
-                    );
-                    return (
-                      <article className="panel compact" key={s.id}>
-                        <div className="section-head">
-                          <div>
-                            <h3>{s.title}</h3>
-                            <p className="muted small">
-                              {s.stage} · {dateLabel(s.date)} ·{" "}
-                              {timeLabel(s.startsAt)} · {s.venue}
+                  <div className="compact-record-list">
+                    {schedules.map((schedule) => {
+                      const latest = state.revisions.find(
+                        (revision) => revision.scheduleId === schedule.id,
+                      );
+                      return (
+                        <article
+                          className="compact-record schedule-staff-row"
+                          key={schedule.id}
+                        >
+                          <div className="compact-record-main">
+                            <h3>{schedule.title}</h3>
+                            <p className="small muted">
+                              {schedule.stage} · {dateLabel(schedule.date)} ·{" "}
+                              {scheduleTimeLabel(schedule, state.schedules)} ·{" "}
+                              {schedule.venue}
                             </p>
+                            <div className="staff-participants">
+                              {schedule.entryIds.map((id) => {
+                                const entry = state.entries.find(
+                                  (item) => item.id === id,
+                                );
+                                return entry ? (
+                                  <CollegeIdentity
+                                    key={id}
+                                    id={entry.collegeId}
+                                    label={entry.label}
+                                  />
+                                ) : null;
+                              })}
+                            </div>
+                            {latest ? (
+                              <p className="small">
+                                Result: <strong>{latest.status}</strong>
+                                {latest.reviewNote
+                                  ? ` · ${latest.reviewNote}`
+                                  : ""}
+                              </p>
+                            ) : null}
                           </div>
-                          <span className={`status ${s.status}`}>
-                            {s.status}
-                          </span>
-                        </div>
-                        <div className="staff-participants">
-                          {s.entryIds.map((id) => {
-                            const entry = state.entries.find(
-                              (e) => e.id === id,
-                            );
-                            return entry ? (
-                              <CollegeIdentity
-                                key={id}
-                                id={entry.collegeId}
-                                label={entry.label}
-                              />
-                            ) : null;
-                          })}
-                        </div>
-                        {latest ? (
-                          <p className="small">
-                            Result: <strong>{latest.status}</strong>
-                            {latest.reviewNote ? ` · ${latest.reviewNote}` : ""}
-                          </p>
-                        ) : null}
-                        <div className="actions">
-                          <button
-                            onClick={() =>
-                              setEditor({ type: "schedule", id: s.id })
-                            }
-                          >
-                            Edit schedule
-                          </button>
-                          <button
-                            disabled={
-                              ["cancelled", "postponed"].includes(s.status) ||
-                              latest?.status === "pending"
-                            }
-                            onClick={() =>
-                              setEditor({ type: "result", id: s.id })
-                            }
-                          >
-                            {s.publishedId
-                              ? "Correct result"
-                              : latest?.status === "draft"
-                                ? "Continue draft"
-                                : "Enter result"}
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                  {!schedules.length && !editor ? (
+                          <div className="record-actions">
+                            <span className={`status ${schedule.status}`}>
+                              {schedule.status}
+                            </span>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                openEditor({
+                                  type: "schedule",
+                                  id: schedule.id,
+                                })
+                              }
+                            >
+                              Edit schedule
+                            </button>
+                            <button
+                              disabled={
+                                busy ||
+                                ["cancelled", "postponed"].includes(
+                                  schedule.status,
+                                ) ||
+                                latest?.status === "pending"
+                              }
+                              onClick={() =>
+                                openEditor({ type: "result", id: schedule.id })
+                              }
+                            >
+                              {schedule.publishedId
+                                ? "Correct result"
+                                : latest?.status === "draft"
+                                  ? "Continue draft"
+                                  : "Enter result"}
+                            </button>
+                            <EventRevisionHistory
+                              state={state}
+                              scheduleId={schedule.id}
+                            />
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {!schedules.length ? (
                     <div className="panel empty">
                       <h3>No competitions scheduled yet.</h3>
                       <p>Create the first schedule for this event.</p>
@@ -485,13 +698,36 @@ export default function StaffApp() {
                   categoryId={category}
                   run={run}
                   busy={busy}
+                  error={error}
+                  onOpen={() => setError("")}
                 />
               ) : null}
               {tab === "review" && admin ? (
-                <ReviewQueue state={state} run={run} busy={busy} />
+                <ReviewQueue
+                  state={state}
+                  run={run}
+                  busy={busy}
+                  error={error}
+                  onOpen={() => setError("")}
+                />
               ) : null}
-              {tab === "accounts" && admin ? (
-                <AccountEditor state={state} run={run} busy={busy} />
+              {tab === "tally" && admin ? (
+                <TallyCorrections
+                  state={state}
+                  run={run}
+                  busy={busy}
+                  error={error}
+                  onOpen={() => setError("")}
+                />
+              ) : null}
+              {tab === "accounts" && superadmin ? (
+                <AccountEditor
+                  state={state}
+                  run={run}
+                  busy={busy}
+                  error={error}
+                  onOpen={() => setError("")}
+                />
               ) : null}
               {tab === "rules" && admin ? (
                 <RuleEditor
@@ -499,84 +735,111 @@ export default function StaffApp() {
                   categoryId={category}
                   run={run}
                   busy={busy}
+                  error={error}
+                  onOpen={() => setError("")}
                 />
               ) : null}
-              {tab === "backup" && state.user.role === "superadmin" ? (
-                <BackupPanel />
-              ) : null}
-              {tab === "history" && admin ? (
-                <section className="panel editor">
-                  <h2>Recent audit history</h2>
-                  <p className="muted">
-                    Latest 200 actions. Full history is preserved in backups.
-                  </p>
-                  {state.audit.map((a) => (
-                    <details className="audit-entry" key={a.id}>
-                      <summary>
-                        {a.action} ·{" "}
-                        {state.users.find((u) => u.id === a.actorId)?.name ||
-                          a.actorId}
-                        <small>
-                          {new Date(a.createdAt).toLocaleString("en-PH", {
-                            timeZone: "Asia/Manila",
-                          })}
-                        </small>
-                      </summary>
-                      <p>{a.reason}</p>
-                      <h4>Before</h4>
-                      <pre>{JSON.stringify(a.before, null, 2)}</pre>
-                      <h4>After</h4>
-                      <pre>{JSON.stringify(a.after, null, 2)}</pre>
-                    </details>
-                  ))}
-                </section>
+              {tab === "backup" && superadmin ? <BackupPanel /> : null}
+              {tab === "history" && superadmin ? (
+                <HistoryPanel state={state} />
               ) : null}
               {tab === "password" ? (
-                <section className="panel editor">
+                <section className="panel compact">
                   <h2>Change your password</h2>
-                  <StaffForm
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      const f = new FormData(e.currentTarget);
-                      setBusy(true);
-                      try {
-                        await api("/api/auth/password", {
-                          currentPassword: f.get("currentPassword"),
-                          newPassword: f.get("newPassword"),
-                        });
-                        location.assign("/staff/login");
-                      } catch (err) {
-                        setError((err as Error).message);
-                      } finally {
-                        setBusy(false);
-                      }
+                  <p className="small muted">
+                    Set a new password for your account. You will sign in again
+                    afterward.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setError("");
+                      setPasswordEditor(true);
                     }}
                   >
-                    <label>
-                      Current password
-                      <input
-                        type="password"
-                        name="currentPassword"
-                        autoComplete="current-password"
-                        required
-                      />
-                    </label>
-                    <label>
-                      New password
-                      <input
-                        type="password"
-                        name="newPassword"
-                        autoComplete="new-password"
-                        minLength={12}
-                        maxLength={72}
-                        required
-                      />
-                    </label>
-                    <button className="primary" disabled={busy}>
-                      Change password and sign out
-                    </button>
-                  </StaffForm>
+                    Change password
+                  </button>
                 </section>
+              ) : null}
+              {editor?.type === "schedule" ? (
+                <StaffDialog
+                  title={
+                    editor.id ? "Edit competition" : "Schedule a competition"
+                  }
+                  busy={busy}
+                  error={error}
+                  onClose={() => setEditor(null)}
+                >
+                  <ScheduleEditor
+                    key={editor.id || `new-${category}`}
+                    state={state}
+                    existing={state.schedules.find(
+                      (schedule) => schedule.id === editor.id,
+                    )}
+                    categoryId={category}
+                    run={run}
+                    close={() => setEditor(null)}
+                    busy={busy}
+                  />
+                </StaffDialog>
+              ) : null}
+              {editor?.type === "result" &&
+              state.schedules.find((schedule) => schedule.id === editor.id) ? (
+                <StaffDialog
+                  title={
+                    state.schedules.find(
+                      (schedule) => schedule.id === editor.id,
+                    )?.publishedId
+                      ? "Correct competition result"
+                      : "Enter competition result"
+                  }
+                  busy={busy}
+                  error={error}
+                  onClose={() => setEditor(null)}
+                >
+                  <ResultEditor
+                    key={editor.id}
+                    state={state}
+                    schedule={
+                      state.schedules.find(
+                        (schedule) => schedule.id === editor.id,
+                      )!
+                    }
+                    run={run}
+                    close={() => setEditor(null)}
+                    busy={busy}
+                  />
+                </StaffDialog>
+              ) : null}
+              {bracketEditor ? (
+                <StaffDialog
+                  title="Arrange tournament bracket"
+                  busy={busy}
+                  error={error}
+                  onClose={() => setBracketEditor(false)}
+                >
+                  <BracketEditor
+                    serverError={error}
+                    state={state}
+                    categoryId={category}
+                    run={run}
+                    busy={busy}
+                    close={() => setBracketEditor(false)}
+                  />
+                </StaffDialog>
+              ) : null}
+              {passwordEditor ? (
+                <StaffDialog
+                  title="Change your password"
+                  busy={busy}
+                  error={error}
+                  onClose={() => setPasswordEditor(false)}
+                >
+                  <PasswordForm
+                    onError={setError}
+                    busy={busy}
+                    setBusy={setBusy}
+                  />
+                </StaffDialog>
               ) : null}
             </>
           )}

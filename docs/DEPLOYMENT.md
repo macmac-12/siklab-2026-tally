@@ -4,6 +4,14 @@ This release uses Vercel Hobby for Next.js, Supabase Free for PostgreSQL and pri
 
 The deployment branch is `codex/deploy-vercel-supabase`. Never merge or push it to `main`/`master`. Keep the canonical public URL, verified commit and latest verification results in the release handoff; this document describes the procedure and does not assert that a deployment has passed.
 
+## Functionality and UI refinement releases
+
+Migration `004_tally_adjustments.sql` adds a private, RLS-protected correction ledger without rewriting existing event records. It configures the restricted runtime grant/policy when the cloud role exists. Capture a private pre-release backup, validate that backup in a disposable local database, and record the existing Vercel deployment before applying the migration explicitly with `npm run db:cloud:migrate`. Verify RLS and runtime/browser-role privileges, then deploy the reviewed, pushed branch through the guarded release command.
+
+Backups now export version 4. Versions 2/3 remain accepted with an empty correction ledger. Restore/reset safeguards remain mandatory; competition reset clears manual corrections. After corrections have been used, a code rollback must use correction-aware tally calculation rather than silently ignoring saved offsets. The additive table should remain in place during code recovery.
+
+Production may contain active event records. Use the read-only `scripts/verify-hosted-browser.py` acceptance after releases; it validates the catalog and privacy without requiring an empty competition dataset. `HOSTED_EXPECT_EMPTY=1` opts into the initial clean-baseline check. Never run destructive pre-launch rehearsal/finalization scripts against an active event installation. Detailed refinement checks and evidence are recorded in `docs/FUNCTIONAL_UI_VERIFICATION.md`.
+
 ## Phase 1: Prepare and protect the release
 
 1. Preserve existing local work on the deployment branch and review the complete diff. Confirm the protected branches' remote commit IDs before and after publishing.

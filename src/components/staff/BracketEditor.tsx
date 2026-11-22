@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
+import { useStaffDialogClose } from "@/components/ui/StaffDialog";
 import type { StaffSnapshot } from "@/lib/model";
 import {
   type Bracket,
@@ -26,6 +27,7 @@ export default function BracketEditor({
   close: () => void;
   serverError: string;
 }) {
+  const modal = useStaffDialogClose();
   const records = state.brackets.filter(
     (b) => b.draft.categoryId === categoryId,
   );
@@ -44,26 +46,9 @@ export default function BracketEditor({
   const [saved, setSaved] = useState(JSON.stringify(graph));
   const [preview, setPreview] = useState(false),
     [round, setRound] = useState(""),
-    [error, setError] = useState(""),
-    [discard, setDiscard] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
+    [error, setError] = useState("");
+  const dialog = useRef<HTMLDivElement>(null);
   const dirty = JSON.stringify(graph) !== saved;
-  useEffect(() => {
-    if (discard)
-      dialog.current
-        ?.querySelector<HTMLElement>("[data-discard-keep]")
-        ?.focus();
-  }, [discard]);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    dialog.current?.showModal();
-    return () => {
-      document.body.style.overflow = overflow;
-      previous?.focus();
-    };
-  }, []);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -91,16 +76,13 @@ export default function BracketEditor({
   const data = { ...context, awards: [] };
   function update(patch: Partial<Bracket>) {
     setGraph((g) => ({ ...g, ...patch }));
+    modal?.markDirty();
     setError("");
   }
   function nodeChange(index: number, patch: Partial<Bracket["nodes"][number]>) {
     update({
       nodes: graph.nodes.map((n, i) => (i === index ? { ...n, ...patch } : n)),
     });
-  }
-  function requestClose() {
-    if (dirty) setDiscard(true);
-    else close();
   }
   async function save(publish: boolean) {
     if (busy) return;
@@ -129,10 +111,12 @@ export default function BracketEditor({
       bracket: graph,
       publish,
     });
-    if (success) close();
-    else
+    if (success) {
+      if (modal) modal.complete();
+      else close();
+    } else
       setError(
-        "Save failed. Your draft is preserved. Check the workspace error; close without saving and reopen to load the current version if it changed.",
+        "Save failed. Your draft is preserved. Review the error above; close without saving and reopen to load the current version if it changed.",
       );
   }
   function slotControl(slot: Slot, index: number, side: number) {
@@ -189,40 +173,11 @@ export default function BracketEditor({
     );
   }
   return (
-    <dialog
-      ref={dialog}
-      className="bracket-editor"
-      aria-labelledby="bracket-editor-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        requestClose();
-      }}
-    >
-      <div className="section-head">
-        <h1 id="bracket-editor-title">Arrange tournament bracket</h1>
-        <button type="button" onClick={requestClose} disabled={busy}>
-          <X size={16} /> Close
-        </button>
-      </div>
+    <div ref={dialog} className="bracket-editor">
       <p>
         Arrange matches manually. Fixtures keep their confirmed participants and
         logistics. Draft saves do not change the published bracket.
       </p>
-      {discard ? (
-        <div className="alert" role="alert">
-          <p>Discard unsaved bracket changes?</p>
-          <button
-            data-discard-keep
-            onClick={() => {
-              setDiscard(false);
-              dialog.current?.querySelector("input")?.focus();
-            }}
-          >
-            Keep editing
-          </button>
-          <button onClick={close}>Discard changes and close</button>
-        </div>
-      ) : null}
       <label>
         Saved bracket
         <select
@@ -252,9 +207,9 @@ export default function BracketEditor({
           Unsaved changes. Save or discard before switching brackets.
         </p>
       ) : null}
-      {error || serverError ? (
+      {error && !serverError ? (
         <p id="bracket-error" role="alert" tabIndex={-1} className="alert">
-          {serverError || error}
+          {error}
         </p>
       ) : null}
       <form
@@ -270,7 +225,9 @@ export default function BracketEditor({
               Bracket name
               <input
                 aria-invalid={!!error && !graph.title.trim()}
-                aria-describedby={error ? "bracket-error" : undefined}
+                aria-describedby={
+                  error && !serverError ? "bracket-error" : undefined
+                }
                 value={graph.title}
                 onChange={(e) => update({ title: e.target.value })}
               />
@@ -302,7 +259,9 @@ export default function BracketEditor({
                 Lane {i + 1}
                 <input
                   aria-invalid={!!error && !l.name.trim()}
-                  aria-describedby={error ? "bracket-error" : undefined}
+                  aria-describedby={
+                    error && !serverError ? "bracket-error" : undefined
+                  }
                   value={l.name}
                   onChange={(e) =>
                     update({
@@ -344,7 +303,9 @@ export default function BracketEditor({
                 Round {i + 1}
                 <input
                   aria-invalid={!!error && !r.name.trim()}
-                  aria-describedby={error ? "bracket-error" : undefined}
+                  aria-describedby={
+                    error && !serverError ? "bracket-error" : undefined
+                  }
                   value={r.name}
                   onChange={(e) =>
                     update({
@@ -425,7 +386,9 @@ export default function BracketEditor({
                   Match label
                   <input
                     aria-invalid={!!error && !n.label.trim()}
-                    aria-describedby={error ? "bracket-error" : undefined}
+                    aria-describedby={
+                      error && !serverError ? "bracket-error" : undefined
+                    }
                     value={n.label}
                     onChange={(e) => nodeChange(i, { label: e.target.value })}
                   />
@@ -552,6 +515,6 @@ export default function BracketEditor({
           onRound={setRound}
         />
       ) : null}
-    </dialog>
+    </div>
   );
 }

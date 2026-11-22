@@ -1066,3 +1066,271 @@
     width: 100%;
   }
 }
+
+/* Compact staff records keep editing in the shared dialog, not in the list. */
+.staff-app .staff-toolbar {
+  margin-top: 0;
+  align-items: center;
+}
+.staff-app .compact-record-list {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.staff-app .compact-record-list:empty {
+  display: none;
+}
+.staff-app .compact-record {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+.staff-app .compact-record:last-child {
+  border-bottom: 0;
+}
+.staff-app .compact-record-main {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.staff-app .compact-record h3 {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.4;
+  margin: 0;
+  font-weight: 650;
+}
+.staff-app .compact-record p {
+  margin: 4px 0 0;
+}
+.staff-app .compact-record .eyebrow {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.staff-app .compact-record > button {
+  flex-shrink: 0;
+}
+.staff-app .record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+}
+.staff-app .record-actions .status {
+  width: fit-content;
+}
+.staff-app .schedule-staff-row .staff-participants {
+  margin: 8px 0 0;
+  gap: 12px;
+}
+.staff-app .schedule-staff-row .staff-participants .college-identity {
+  font-size: 12px;
+}
+.staff-app .review-row-summary {
+  font-size: 14px;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.staff-app .staff-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  gap: 12px;
+}
+.staff-app .staff-pagination > span:first-child {
+  margin-right: auto;
+}
+.staff-app .review-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-block: 24px;
+}
+.staff-app .review-comparison.has-before {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.staff-app .review-comparison > section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-subtle);
+}
+.staff-app .review-comparison h3 {
+  font-family: var(--font-body);
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+.staff-app .review-comparison .impact {
+  padding: 12px;
+}
+.staff-app .review-comparison ul {
+  padding-left: 20px;
+}
+.staff-app .review-decision-options .check {
+  margin-bottom: 0;
+}
+.staff-app .championship-summary > button {
+  margin-top: 16px;
+}
+.staff-app .college-order-list {
+  list-style: none;
+  padding: 0;
+  margin-block: 16px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.staff-app .college-order-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.staff-app .college-order-list li:last-child {
+  border-bottom: 0;
+}
+.staff-app .college-order-list li > strong {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.staff-app .college-order-list li > strong small {
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+}
+.staff-app .order-controls {
+  display: flex;
+  gap: 4px;
+}
+.staff-app .order-controls button {
+  width: 36px;
+  min-height: 36px;
+  padding: 8px;
+}
+.staff-app .rank-points-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+}
+.staff-app .rule-point-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.staff-app .rule-point-summary > span {
+  background: var(--color-subtle);
+  border: 1px solid var(--color-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.staff-app .maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.staff-app .maintenance-grid .panel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+}
+.staff-app .maintenance-grid h3,
+.staff-app .maintenance-grid p {
+  margin: 0;
+}
+.staff-app .maintenance-grid button {
+  margin-top: auto;
+}
+.staff-app .history-json {
+  max-height: 320px;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 6px;
+  background: var(--color-subtle);
+  font-family: var(--font-data);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.staff-app .bracket-editor {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.staff-app .recovery-dialog-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.staff-app .staff-dialog-body form > button:not([type="button"]):last-child {
+  position: sticky;
+  bottom: -20px;
+  margin-top: 16px;
+}
+@media (max-width: 1023px) {
+  .staff-app .maintenance-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .staff-app .record-actions {
+    max-width: 240px;
+  }
+}
+@media (max-width: 767px) {
+  .staff-app .compact-record {
+    flex-wrap: wrap;
+    align-items: start;
+    gap: 12px;
+    padding: 12px;
+  }
+  .staff-app .compact-record-main {
+    flex-basis: calc(100% - 100px);
+  }
+  .staff-app .record-actions {
+    max-width: none;
+    width: 100%;
+    justify-content: start;
+  }
+  .staff-app .review-row-summary {
+    flex: 1;
+    max-width: none;
+  }
+  .staff-app .review-row .compact-record-main {
+    flex-basis: 100%;
+  }
+  .staff-app .review-comparison.has-before {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .staff-app .rank-points-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .staff-app .college-order-list li {
+    gap: 8px;
+    padding: 8px;
+    flex-wrap: wrap;
+  }
+  .staff-app .college-order-list li > strong {
+    font-size: 12px;
+  }
+  .staff-app .college-order-list li > strong small {
+    display: block;
+  }
+  .staff-app .staff-pagination {
+    gap: 8px;
+    justify-content: center;
+  }
+  .staff-app .staff-pagination > span:first-child {
+    margin-right: 0;
+  }
+}

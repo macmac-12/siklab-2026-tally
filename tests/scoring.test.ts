@@ -17,11 +17,9 @@ const entry = {
 const win = [{ entryId: "ccs", rank: 1, eligible: true }];
 test("CODM and MLBB championships contribute 40; no generic E-games award", () => {
   const awards = ["CODM", "MLBB"].map((event) => ({
-    rows: directAwards(
-      CATEGORIES.find((c) => c.event === event)!,
-      win,
-      [entry],
-    ),
+    rows: directAwards(CATEGORIES.find((c) => c.event === event)!, win, [
+      entry,
+    ]),
   }));
   assert.equal(overall(awards).find((r) => r.id === "CCS")!.points, 40);
   assert(!CATEGORIES.some((c) => c.event === "E-Games"));
@@ -87,6 +85,39 @@ test("overall ties share a rank and no awards shows unranked", () => {
   assert.deepEqual(
     rows.slice(0, 3).map((r) => r.rank),
     [1, 1, 3],
+  );
+});
+test("manual totals preserve medals, shared points ranks and future championship additions", () => {
+  const adjustments = [
+    { collegeId: "CCS" as const, points: 10, gold: 2, silver: 3, bronze: 4 },
+    { collegeId: "CAS" as const, points: 10, gold: 0, silver: 0, bronze: 0 },
+  ];
+  const manual = overall([], adjustments);
+  assert.equal(manual.find((row) => row.id === "CCS")!.rank, 1);
+  assert.equal(manual.find((row) => row.id === "CAS")!.rank, 1);
+  const withAward = overall(
+    [{ rows: [{ collegeId: "CCS", points: 20, eligible: true, rank: 1 }] }],
+    adjustments,
+  );
+  const row = withAward.find((r) => r.id === "CCS")!;
+  assert.deepEqual(
+    [row.points, row.gold, row.silver, row.bronze],
+    [30, 3, 3, 4],
+  );
+  assert.equal(row.rank, 1);
+  assert.equal(withAward.find((r) => r.id === "CAS")!.rank, 2);
+  const corrected = overall(
+    [{ rows: [{ collegeId: "CCS", points: 20, eligible: true, rank: 1 }] }],
+    [{ collegeId: "CCS", points: -5, gold: -1, silver: 2, bronze: 1 }],
+  );
+  assert.deepEqual(
+    [
+      corrected[0].points,
+      corrected[0].gold,
+      corrected[0].silver,
+      corrected[0].bronze,
+    ],
+    [15, 0, 2, 1],
   );
 });
 test("placements reject duplicates, missing entrants, tied ranks and rank gaps", () => {

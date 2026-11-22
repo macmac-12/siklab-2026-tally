@@ -15,7 +15,8 @@ Versioned SQL migrations run explicitly during setup, never on ordinary page rea
 - `revisions`: immutable result/award proposals and their draft/pending/approved/rejected/superseded lifecycle. A new draft supersedes its predecessor; rejected proposals stay in history.
 - `awards`: one current published championship revision per category. Overall totals sum only those revisions.
 - `accounts`, `assignments`, `sessions`: current authorization, stable actor IDs and revocable opaque sessions. Session tokens are stored only as hashes.
-- `audit`: before/after records with actor IDs, reasons and timestamps.
+- `audit`: before/after records with actor IDs, reasons and timestamps; visible only to superadministrators.
+- `tally_adjustments`: immutable API-created point/medal correction offsets, separate from championship awards; full records remain private and public projections expose only per-college sums.
 - `idempotency`: actor-scoped request keys, request hashes and saved responses. Retried requests cannot silently create a second award.
 
 Every mutation holds a PostgreSQL advisory transaction lock across processes. This is deliberately simple for event staff traffic; it serializes short writes while readers continue concurrently. Password hashing occurs before competition transactions or only during authentication/reset. Database unique/FK constraints reinforce the service's validation. If measured staff traffic outgrows serialized writes, replace the coarse lock with category/venue locks while retaining the same tests.
@@ -26,9 +27,9 @@ Read snapshots use repeatable-read transactions. Result correction impacts are c
 
 - `GET /api/public/overview`, `/schedules`, `/results`, `/standings`: approved projection with category/college/date/venue/status filters, `page`, and `limit` (1–100). `view=results` selects competitions with published results. Returns categories, disciplines, public entries, paged schedules/results, official awards, pagination and freshness metadata. Internal review/actor/password fields are excluded.
 - `POST /api/auth/login`, `/logout`, `/password`; `GET /api/auth/me`: staff authentication only.
-- `GET /api/staff/state`: current authorized workspace. Officers see only assigned categories and no account/audit administration.
+- `GET /api/staff/state`: current authorized workspace. Officers see only assigned categories. Accounts/full audit are superadministrator-only; visible event revisions have scoped actor display names. Admins/superadmins receive aggregate tally correction offsets.
 - `POST /api/staff/command`: validated schedule, entry, result, award, review, account and rule commands; requires an `Idempotency-Key`.
-- `GET /api/staff/backup`, `POST /api/staff/restore`: superadministrator-only version-3 backup export (version-2 restores remain accepted) and validated preview/restore.
+- `GET /api/staff/backup`, `POST /api/staff/restore`: superadministrator-only version-4 backup export (version-2/3 restores remain accepted with an empty correction ledger) and validated preview/restore.
 - Legacy unscoped endpoints return 410 and cannot expose old private state.
 
 Mutation requests require a matching Origin and JSON content type. Sessions expire after eight hours, are HttpOnly/SameSite=Lax, and are revoked on logout/reset/disable. Login attempts are bounded per normalized account email. Enable secure cookies for later HTTPS hosting.
@@ -39,7 +40,7 @@ The approved public projection uses compressed Vercel Runtime Cache and filtered
 
 `/scoreboard` redirects to `/standings`. Public pages remain public even when a staff cookie is present. `/staff/login` and `/staff` are shared directly with staff and are excluded from search indexing metadata.
 
-Existing empty-installation accounts migrate with IDs/hashes preserved; nonempty legacy competition data stops migration for explicit reconciliation. Backups are schema version 3 with brackets (version 2 restores contain no brackets), not compatible with the old loosely validated JSON import. Original audit artifacts and source references remain in Git history.
+Existing empty-installation accounts migrate with IDs/hashes preserved; nonempty legacy competition data stops migration for explicit reconciliation. Backups are schema version 4 with brackets and manual tally corrections; version 2/3 restores have no corrections, and version 2 has no brackets. The old loosely validated JSON import is incompatible. Original audit artifacts and source references remain in Git history.
 
 Automatic tournament brackets, full athlete registration, judges' scoring sheets, offline writes and external notifications are intentionally absent. Fixed intervals support conflict detection; unknown durations and unscheduled athlete overlaps cannot be inferred. Staff enter committee-certified final standings for direct-award events. The software does not resolve ambiguous official rules by guessing.
 
