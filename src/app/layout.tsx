@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import ThemeProvider, { ThemeScript } from "@/components/shared/ThemeProvider";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
@@ -23,6 +24,7 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
