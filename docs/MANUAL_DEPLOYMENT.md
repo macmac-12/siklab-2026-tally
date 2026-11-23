@@ -1,6 +1,6 @@
 # Manually deploy Siklab to Vercel
 
-Production: https://siklab-tally-free.vercel.app
+Production: https://siklab2026.vercel.app
 
 GitHub is not connected to this Vercel project. Pushing a commit preserves the source in GitHub, but does not publish it. Run the guarded deployment command below to publish that same commit.
 
@@ -86,7 +86,7 @@ npx --yes vercel@66.6.0 deploy --prod --yes --scope execuus-projects
 ## 5. Verify the actual live deployment
 
 ```bash
-npx --yes vercel@66.6.0 inspect https://siklab-tally-free.vercel.app --scope execuus-projects
+npx --yes vercel@66.6.0 inspect https://siklab2026.vercel.app --scope execuus-projects
 python scripts/verify-hosted-browser.py
 ```
 
