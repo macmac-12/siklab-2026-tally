@@ -7,6 +7,10 @@ import type { PublicData } from "./usePublicData";
 import type { Schedule } from "@/lib/model";
 import { dateLabel } from "../shared/format";
 import { ResultContent, ScheduleCard } from "./ScoreViews";
+import {
+  isCompletedFieldEvent,
+  matchOutcomeLabel,
+} from "@/lib/public-projections";
 export function StudentEmpty({
   title,
   text,
@@ -89,8 +93,9 @@ export function CollegeResultRow({
   college: string;
 }) {
   const result = data.results.find((r) => r.scheduleId === s.id);
-  if (!result) return null;
-  const b = result.body;
+  if (!result && !isCompletedFieldEvent(s)) return null;
+  const b = result?.body;
+  const completionOnly = s.kind === "placing" && !b?.placings.length;
   const own = s.entryIds.filter(
     (id) => data.entries.find((e) => e.id === id)?.collegeId === college,
   );
@@ -99,18 +104,12 @@ export function CollegeResultRow({
     return entry ? displayEntryLabel(entry) : id;
   };
   const outcomes = own.map((id) => {
+    if (!b || completionOnly) return "Completed";
     if (s.kind !== "match") {
       const p = b.placings.find((p) => p.entryId === id);
       return `${label(id)}: ${p?.eligible ? (p.rank ? `Place ${p.rank}` : "Participation") : "Not eligible"}`;
     }
-    const i = s.entryIds.indexOf(id),
-      a = i === 0 ? b.scoreA : b.scoreB,
-      other = i === 0 ? b.scoreB : b.scoreA;
-    const forfeited =
-      b.outcome === "double_forfeit" ||
-      b.outcome === (i === 0 ? "forfeitA" : "forfeitB");
-    const wonForfeit = b.outcome === (i === 0 ? "forfeitB" : "forfeitA");
-    return `${label(id)}: ${forfeited ? "Loss by forfeit" : wonForfeit ? "Win by forfeit" : a === other ? "Draw" : a !== null && other !== null && a > other ? "Win" : "Loss"}`;
+    return `${label(id)}: ${matchOutcomeLabel(s, b, id)}`;
   });
   return (
     <details className="college-result">
@@ -120,10 +119,10 @@ export function CollegeResultRow({
             {categoryLabel(data.categories.find((c) => c.id === s.categoryId)!)}
           </span>
           <strong>{s.title}</strong>
-          <span>{outcomes.join(" · ")}</span>
+          <span>{[...new Set(outcomes)].join(" · ")}</span>
         </div>
         <div className="result-summary-score">
-          {s.kind === "match" ? (
+          {s.kind === "match" && b ? (
             <>
               <span className="result-contenders">
                 {s.entryIds.map((id) => {
@@ -139,25 +138,54 @@ export function CollegeResultRow({
                   );
                 })}
               </span>
-              <strong className="numeric">
-                {b.scoreA ?? "—"} – {b.scoreB ?? "—"}
-              </strong>
+              {b.scoreA !== null && b.scoreB !== null ? (
+                <strong className="numeric">
+                  {b.scoreA} – {b.scoreB}
+                </strong>
+              ) : null}
             </>
           ) : (
-            <span>View full placings</span>
+            <span>
+              {b && !completionOnly ? "View full placings" : "Event details"}
+            </span>
           )}
-          <small>
-            Published{" "}
-            {new Intl.DateTimeFormat("en-PH", {
-              timeZone: "Asia/Manila",
-              dateStyle: "medium",
-              timeStyle: "short",
-            }).format(new Date(result.publishedAt))}
-          </small>
+          {result && !completionOnly ? (
+            <small>
+              Published{" "}
+              {new Intl.DateTimeFormat("en-PH", {
+                timeZone: "Asia/Manila",
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(result.publishedAt))}
+            </small>
+          ) : (
+            <small>{dateLabel(s.date)}</small>
+          )}
         </div>
       </summary>
       <div className="result-details">
-        <ResultContent body={b} schedule={s} data={data} />
+        {b && !completionOnly ? (
+          <ResultContent body={b} schedule={s} data={data} />
+        ) : (
+          <>
+            <p>
+              Completed · {s.stage} · {s.venue}
+            </p>
+            <div className="result-contenders">
+              {s.entryIds.map((id) => {
+                const entry = data.entries.find((e) => e.id === id);
+                return entry ? (
+                  <CollegeIdentity
+                    key={id}
+                    id={entry.collegeId}
+                    label={label(id)}
+                  />
+                ) : null;
+              })}
+            </div>
+            {b?.note ? <p className="result-note">{b.note}</p> : null}
+          </>
+        )}
       </div>
     </details>
   );
@@ -179,12 +207,14 @@ export function CollegeBanners({
     <div className="college-banners">
       {COLLEGES.map((c) => {
         const summary = data.collegeResults.find((x) => x.collegeId === c.id);
-        const rows = (summary?.resultIds || [])
-          .map((id) =>
-            data.schedules.find(
-              (s) => s.id === data.results.find((r) => r.id === id)?.scheduleId,
-            ),
-          )
+        const scheduleIds =
+          summary?.scheduleIds ||
+          (summary?.resultIds || []).flatMap((id) => {
+            const result = data.results.find((r) => r.id === id);
+            return result ? [result.scheduleId] : [];
+          });
+        const rows = scheduleIds
+          .map((id) => data.schedules.find((s) => s.id === id))
           .filter((s): s is Schedule => !!s);
         return (
           <section
@@ -214,7 +244,7 @@ export function CollegeBanners({
             ))}
             {!rows.length ? (
               <p className="college-empty">
-                No approved results match.{" "}
+                No results or completed events match.{" "}
                 <Link
                   className="text-link"
                   href={collegeHref("/schedules", c.id)}

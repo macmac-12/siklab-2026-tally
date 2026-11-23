@@ -6,7 +6,9 @@ import type {
   ResultBody,
   Schedule,
   TallyAdjustment,
+  CollegePlacing,
 } from "./model";
+import { resolveMatchOutcome } from "./outcomes";
 export function pointsFor(
   rank: number | null,
   eligible: boolean,
@@ -17,7 +19,11 @@ export function pointsFor(
     ? rule.podium[rank - 1]
     : rule.participation;
 }
-export function validatePlacings(rows: Placing[], entries: string[]) {
+export function validatePlacings(
+  rows: Placing[],
+  entries: string[],
+  complete = true,
+) {
   if (
     rows.length !== entries.length ||
     new Set(rows.map((r) => r.entryId)).size !== entries.length ||
@@ -42,15 +48,16 @@ export function validatePlacings(rows: Placing[], entries: string[]) {
       "Resolve tied placings with an official ruling before submitting.",
     );
   const ranks = ranked.map((r) => r.rank!).sort((a, b) => a - b);
-  if (ranks.some((n, i) => n !== i + 1))
+  if (complete && ranks.some((n, i) => n !== i + 1))
     throw new Error("Ranked placings must start at 1 without gaps.");
-  if (rows.some((r) => r.eligible) && !ranks.length)
+  if (complete && rows.some((r) => r.eligible) && !ranks.length)
     throw new Error("Enter at least the champion placing.");
 }
 export function directAwards(
   category: Category,
   rows: Placing[],
   entries: Entry[],
+  complete = true,
 ): AwardRow[] {
   if (!category.confirmed)
     throw new Error(
@@ -59,10 +66,15 @@ export function directAwards(
   validatePlacings(
     rows,
     entries.map((e) => e.id),
+    complete,
   );
   if (
+    complete &&
     rows.filter((r) => r.rank !== null).length <
-    Math.min(category.rule.podium.length, rows.filter((r) => r.eligible).length)
+      Math.min(
+        category.rule.podium.length,
+        rows.filter((r) => r.eligible).length,
+      )
   )
     throw new Error(
       "Complete all available podium placings before awarding official points.",
@@ -87,6 +99,26 @@ export function directAwards(
         .slice(0, 1),
     );
   return awards;
+}
+/** Certified college standings use one eligible placing per college. */
+export function directCollegeAwards(
+  category: Category,
+  rows: CollegePlacing[],
+  complete = true,
+): AwardRow[] {
+  if (category.policy !== "college")
+    throw new Error("This category requires candidate or entry standings.");
+  return directAwards(
+    category,
+    rows.map((row) => ({ ...row, entryId: row.collegeId })),
+    COLLEGES.map((college) => ({
+      id: college.id,
+      categoryId: category.id,
+      collegeId: college.id,
+      label: college.name,
+    })),
+    complete,
+  ).map(({ entryId: _entryId, ...row }) => row);
 }
 export function aggregateAwards(
   category: Category,
@@ -182,9 +214,12 @@ export function tournamentTable(
     against: 0,
     points: 0,
     tied: false,
+    scoresComplete: true,
   }));
   for (const { schedule: s, body: b } of matches) {
-    if (s.entryIds.length !== 2 || b.scoreA === null || b.scoreB === null)
+    if (s.entryIds.length !== 2) continue;
+    const outcome = resolveMatchOutcome(s, b);
+    if (!outcome.winnerEntryId && !outcome.draw && !outcome.doubleForfeit)
       continue;
     const a = rows.find((r) => r.id === s.entryIds[0])!,
       c = rows.find((r) => r.id === s.entryIds[1])!;
@@ -197,28 +232,40 @@ export function tournamentTable(
       c.against += 2;
       continue;
     }
-    a.for += b.scoreA;
-    c.for += b.scoreB;
-    a.against += b.scoreB;
-    c.against += b.scoreA;
-    const win = b.scoreA > b.scoreB ? a : c,
-      lose = win === a ? c : a;
-    win.wins++;
-    lose.losses++;
-    if (mode === "mlbb") {
-      win.points += Math.min(b.scoreA, b.scoreB) === 0 ? 3 : 2;
-      lose.points += Math.min(b.scoreA, b.scoreB) === 0 ? 0 : 1;
+    if (outcome.winnerEntryId) {
+      const win = outcome.winnerEntryId === a.id ? a : c;
+      const lose = win === a ? c : a;
+      win.wins++;
+      lose.losses++;
+    }
+    if (b.scoreA !== null && b.scoreB !== null) {
+      a.for += b.scoreA;
+      c.for += b.scoreB;
+      a.against += b.scoreB;
+      c.against += b.scoreA;
+      if (mode === "mlbb" && outcome.winnerEntryId) {
+        const win = outcome.winnerEntryId === a.id ? a : c;
+        const lose = win === a ? c : a;
+        win.points += Math.min(b.scoreA, b.scoreB) === 0 ? 3 : 2;
+        lose.points += Math.min(b.scoreA, b.scoreB) === 0 ? 0 : 1;
+      }
+    } else {
+      a.scoresComplete = false;
+      c.scoresComplete = false;
     }
   }
+  const rankingComplete = rows.every((row) => row.scoresComplete);
   const primary = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-    mode === "mlbb"
-      ? b.points - a.points
-      : b.wins - a.wins ||
-        b.for - b.against - (a.for - a.against) ||
-        b.for - a.for;
+    !rankingComplete
+      ? b.wins - a.wins
+      : mode === "mlbb"
+        ? b.points - a.points
+        : b.wins - a.wins ||
+          b.for - b.against - (a.for - a.against) ||
+          b.for - a.for;
   rows.sort(primary);
   // CODM: direct encounter for two-way ties, mini-table wins then map difference for 3+.
-  for (let i = 0; i < rows.length; ) {
+  for (let i = 0; i < rows.length;) {
     let end = i + 1;
     while (end < rows.length && primary(rows[i], rows[end]) === 0) end++;
     const group = rows.slice(i, end);
@@ -240,7 +287,7 @@ export function tournamentTable(
           c.diff += b.scoreB - b.scoreA;
         }
       const cmp = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-        mode === "mlbb"
+        !rankingComplete || mode === "mlbb"
           ? 0
           : mini.get(b.id)!.wins - mini.get(a.id)!.wins ||
             (group.length > 2
@@ -257,5 +304,11 @@ export function tournamentTable(
     }
     i = end;
   }
-  return rows;
+  return rows.map((row) => ({
+    ...row,
+    for: row.scoresComplete ? row.for : null,
+    against: row.scoresComplete ? row.against : null,
+    points: row.scoresComplete ? row.points : null,
+    rankingComplete,
+  }));
 }

@@ -4,7 +4,12 @@ import EventRevisionHistory from "./EventRevisionHistory";
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Trophy } from "lucide-react";
 import StaffDialog, { useStaffDialogClose } from "@/components/ui/StaffDialog";
-import { pointsFor } from "@/lib/scoring";
+import {
+  aggregateAwards,
+  directAwards,
+  directCollegeAwards,
+  pointsFor,
+} from "@/lib/scoring";
 import type {
   StaffSnapshot,
   Schedule,
@@ -17,6 +22,15 @@ import { categoryLabel, COLLEGES } from "@/lib/catalog";
 import type { Run } from "./client";
 import { displayCode, displayEntryLabel } from "@/lib/branding";
 import CollegeIdentity, { CollegeCrest } from "../shared/CollegeIdentity";
+import { Summary } from "./ReviewQueue";
+import {
+  expectedTally,
+  expectedTallyAfter,
+  PublishConfirmation,
+  TallyImpactPreview,
+  tallyAfter,
+} from "./PublicationPreview";
+import { resolveMatchOutcome } from "@/lib/outcomes";
 function tieOrder(value: FormDataEntryValue | null): string[] {
   try {
     return JSON.parse(String(value || "[]")) as string[];
@@ -149,10 +163,14 @@ export function TieFields({
   state,
   categoryId,
   override,
+  initialOrder,
+  initialRuling = "",
 }: {
   state: StaffSnapshot;
   categoryId: string;
   override?: { scheduleId: string; rows: Placing[] };
+  initialOrder?: string[];
+  initialRuling?: string;
 }) {
   const { markDirty } = useStaffDialogClose()!;
   const totals = subpointTotals(state, categoryId, override);
@@ -160,7 +178,9 @@ export function TieFields({
     .map((c) => c.id as string)
     .sort((a, b) => totals[b] - totals[a]);
   const signature = eligible.join("|");
-  const [order, setOrder] = useState(eligible);
+  const [order, setOrder] = useState(
+    initialOrder?.length ? initialOrder : eligible,
+  );
   useEffect(() => {
     setOrder((previous) =>
       [
@@ -249,6 +269,7 @@ export function TieFields({
         <textarea
           className="resize-none"
           name="ruling"
+          defaultValue={initialRuling}
           required={tied}
           maxLength={2000}
           placeholder="Record the playoff result or committee decision."
@@ -258,11 +279,52 @@ export function TieFields({
   );
 }
 
+type Decision = { kind: "winner"; entryId: string } | { kind: "draw" };
+type EditableResult = ResultBody & { decision?: Decision };
+
+function inferredDecision(
+  body: EditableResult | undefined,
+  schedule: Schedule,
+) {
+  const outcome = resolveMatchOutcome(schedule, body);
+  return outcome.winnerEntryId || (outcome.draw ? "draw" : "");
+}
+
+function calculatedPreview(
+  state: StaffSnapshot,
+  categoryId: string,
+  rows: Placing[],
+  order: string[],
+  ruling: string,
+  override?: { scheduleId: string; rows: Placing[] },
+): AwardBody {
+  const category = state.categories.find((item) => item.id === categoryId)!;
+  const schedules = state.schedules.filter(
+    (item) => item.categoryId === categoryId && item.status !== "cancelled",
+  );
+  const ids = new Set(schedules.flatMap((item) => item.entryIds));
+  const entries = state.entries.filter((entry) => ids.has(entry.id));
+  return {
+    method: "calculated",
+    rows:
+      category.aggregation === "subpoints"
+        ? aggregateAwards(
+            category,
+            subpointTotals(state, categoryId, override),
+            order,
+            ruling,
+          )
+        : directAwards(category, rows, entries),
+    source: "",
+    ruleVersion: category.version,
+    ruling,
+  };
+}
+
 export default function ResultEditor({
   state: initialState,
   schedule: initialSchedule,
   run,
-  close,
   busy,
 }: {
   state: StaffSnapshot;
@@ -271,147 +333,358 @@ export default function ResultEditor({
   close: () => void;
   busy: boolean;
 }) {
-  const { complete } = useStaffDialogClose()!;
+  const dialog = useStaffDialogClose()!;
   const [state] = useState(initialState),
-    [s] = useState(initialSchedule);
+    [schedule] = useState(initialSchedule);
   const draft = state.revisions.find(
-      (r) => r.scheduleId === s.id && r.status === "draft",
-    ),
-    latest = draft || state.revisions.find((r) => r.scheduleId === s.id),
-    old = latest?.body as ResultBody | undefined;
-  const entries = state.entries.filter((e) => s.entryIds.includes(e.id)),
-    c = state.categories.find((c) => c.id === s.categoryId)!;
-  const award = state.revisions.find(
+    (r) => r.scheduleId === schedule.id && r.status === "draft",
+  );
+  const latest =
+    draft || state.revisions.find((r) => r.scheduleId === schedule.id);
+  const old = latest?.body as EditableResult | undefined;
+  const category = state.categories.find((c) => c.id === schedule.categoryId)!;
+  const entries = schedule.entryIds.flatMap(
+    (id) => state.entries.find((entry) => entry.id === id) || [],
+  );
+  const awardRevision = state.revisions.find(
     (r) =>
-      r.categoryId === s.categoryId &&
+      r.categoryId === category.id &&
       r.kind === "award" &&
       r.status === "approved",
   );
-  const allEntryIds = [
-      ...new Set(
-        state.schedules
-          .filter(
-            (x) => x.categoryId === s.categoryId && x.status !== "cancelled",
-          )
-          .flatMap((x) => x.entryIds),
-      ),
-    ],
-    awardEntries = state.entries.filter((e) => allEntryIds.includes(e.id));
-  const [rows, setRows] = useState<Placing[]>(
-    old?.placings ||
-      entries.map((e) => ({ entryId: e.id, rank: null, eligible: false })),
+  const award = awardRevision?.body as AwardBody | undefined;
+  const calculated = !!award && award.method !== "certified";
+  const awardIds = new Set(
+    state.schedules
+      .filter(
+        (item) =>
+          item.categoryId === category.id && item.status !== "cancelled",
+      )
+      .flatMap((item) => item.entryIds),
   );
+  const awardEntries = state.entries.filter((entry) => awardIds.has(entry.id));
+  const [rows, setRows] = useState<Placing[]>(
+    old?.placings.length
+      ? old.placings
+      : entries.map((entry) => ({
+          entryId: entry.id,
+          rank: null,
+          eligible: false,
+        })),
+  );
+  const [includePlacings, setIncludePlacings] = useState(
+    !!old?.placings.length,
+  );
+  const [winner, setWinner] = useState(inferredDecision(old, schedule));
+  const [outcome, setOutcome] = useState<ResultBody["outcome"]>(
+    old?.outcome || "normal",
+  );
+  const [scoreA, setScoreA] = useState(old?.scoreA?.toString() || ""),
+    [scoreB, setScoreB] = useState(old?.scoreB?.toString() || "");
   const [awardRows, setAwardRows] = useState<Placing[]>(
     old?.awardPlacings ||
-      awardEntries.map((e) => {
-        const r = (award?.body as AwardBody | undefined)?.rows.find(
-          (r) => r.entryId === e.id,
-        );
+      awardEntries.map((entry) => {
+        const row = award?.rows.find((item) => item.entryId === entry.id);
         return {
-          entryId: e.id,
-          rank: r?.rank || null,
-          eligible: r?.eligible || false,
+          entryId: entry.id,
+          rank: row?.rank ?? null,
+          eligible: row?.eligible ?? false,
         };
       }),
   );
+  const [localError, setLocalError] = useState("");
+  const [savedFields, setSavedFields] = useState({
+    note: old?.note || "",
+    matchRuling: old?.ruling || "",
+    reason: draft?.reason || "",
+    awardRuling: old?.awardRuling || "",
+    order: old?.awardTieOrder || [],
+  });
+  const [proposal, setProposal] = useState<{
+    command: Record<string, unknown>;
+    body: ResultBody;
+    impact?: AwardBody;
+  } | null>(null);
   const pending = state.revisions.some(
-    (r) => r.scheduleId === s.id && r.status === "pending",
+    (r) => r.scheduleId === schedule.id && r.status === "pending",
   );
+  if (state.user.role === "officer") return null;
+  if (proposal)
+    return (
+      <PublishConfirmation
+        title="Confirm competition result"
+        busy={busy}
+        onBack={() => setProposal(null)}
+        onConfirm={async () => {
+          if (await run(proposal.command)) dialog.complete();
+        }}
+      >
+        <p>
+          <strong>{schedule.title}</strong>
+        </p>
+        {proposal.command.action === "schedule.save" ? (
+          <p>
+            <strong>Event completed</strong> · no placings recorded.
+          </p>
+        ) : (
+          <Summary state={state} body={proposal.body} kind="result" />
+        )}
+        {proposal.impact ? (
+          <>
+            <h3>Calculated championship standings after correction</h3>
+            <Summary state={state} body={proposal.impact} kind="award" />
+            <TallyImpactPreview
+              state={state}
+              categoryId={category.id}
+              award={proposal.impact}
+            />
+          </>
+        ) : (
+          <p className="muted">
+            This result leaves the official college tally unchanged.
+          </p>
+        )}
+      </PublishConfirmation>
+    );
   return (
     <section className="editor dialog-editor">
       <p className="eyebrow">
-        {categoryLabel(c)} · {s.title}
+        {categoryLabel(category)} · {schedule.title}
       </p>
       <p className="muted">
-        {s.publishedId
-          ? "Submit a correction. The existing approved result stays public until review."
-          : "Save a draft or submit for review. This result adds no official college points."}
+        Select who won; a numerical score is optional. Multi-college events can
+        be completed without placings. Saving a draft keeps the public record
+        unchanged.
       </p>
+      {pending ? (
+        <p className="alert">
+          A legacy submission is awaiting review. Publish or return it in the
+          review queue before entering another version.
+        </p>
+      ) : null}
       {latest?.status === "rejected" ? (
         <p className="alert">Needs revision: {latest.reviewNote}</p>
       ) : null}
-      {pending ? (
-        <p className="alert">
-          This competition already has a submission awaiting review.
+      {localError ? (
+        <p role="alert" className="alert">
+          {localError}
         </p>
       ) : null}
       <StaffForm
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget),
-            submit =
-              (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget),
+            publish =
+              (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
                 "value",
-              ) === "submit";
-          const number = (key: string) =>
-            f.get(key) === "" || f.get(key) === null
-              ? null
-              : Number(f.get(key));
-          const body = {
-            scoreA: s.kind === "match" ? number("scoreA") : null,
-            scoreB: s.kind === "match" ? number("scoreB") : null,
-            outcome: s.kind === "match" ? f.get("outcome") : "normal",
-            placings: s.kind === "placing" ? rows : [],
-            note: f.get("note"),
-            ruling: f.get("matchRuling") || "",
-            ...(award
+              ) === "publish";
+          setSavedFields({
+            note: String(form.get("note") || ""),
+            matchRuling: String(form.get("matchRuling") || ""),
+            reason: String(form.get("reason") || ""),
+            awardRuling: String(form.get("ruling") || ""),
+            order: tieOrder(form.get("tieOrder")),
+          });
+          const body: EditableResult = {
+            scoreA:
+              schedule.kind === "match" && scoreA !== ""
+                ? Number(scoreA)
+                : null,
+            scoreB:
+              schedule.kind === "match" && scoreB !== ""
+                ? Number(scoreB)
+                : null,
+            outcome: schedule.kind === "match" ? outcome : "normal",
+            placings:
+              schedule.kind === "placing" && includePlacings ? rows : [],
+            note: String(form.get("note") || ""),
+            ruling: String(form.get("matchRuling") || ""),
+            ...(schedule.kind === "match" &&
+            outcome !== "double_forfeit" &&
+            winner
+              ? {
+                  decision:
+                    winner === "draw"
+                      ? { kind: "draw" as const }
+                      : { kind: "winner" as const, entryId: winner },
+                }
+              : {}),
+            ...(calculated
               ? {
                   awardPlacings: awardRows,
-                  awardTieOrder: tieOrder(f.get("tieOrder")),
-                  awardRuling: f.get("ruling") || "",
+                  awardTieOrder: tieOrder(form.get("tieOrder")),
+                  awardRuling: String(form.get("ruling") || ""),
                 }
               : {}),
           };
-          if (
-            await run({
-              action: "result.save",
-              scheduleId: s.id,
-              body,
-              submit,
-              replacesId: draft?.id || null,
-              baseId: s.publishedId,
-              reason: f.get("reason") || "",
-            })
-          )
-            complete();
+          try {
+            if (
+              publish &&
+              schedule.kind === "match" &&
+              outcome !== "double_forfeit" &&
+              !winner
+            )
+              throw new Error(
+                "Choose the winning college, or a draw for chess.",
+              );
+            if (publish && (body.scoreA === null) !== (body.scoreB === null))
+              throw new Error(
+                "Enter both optional scores or leave both blank.",
+              );
+            if (
+              publish &&
+              schedule.kind === "match" &&
+              body.scoreA !== null &&
+              body.scoreB !== null &&
+              outcome !== "double_forfeit"
+            ) {
+              const scoredWinner =
+                body.scoreA === body.scoreB
+                  ? "draw"
+                  : schedule.entryIds[body.scoreA > body.scoreB ? 0 : 1];
+              if (winner !== scoredWinner)
+                throw new Error(
+                  "The optional scores must agree with the selected match result.",
+                );
+            }
+            const impact =
+              publish && calculated
+                ? calculatedPreview(
+                    state,
+                    category.id,
+                    awardRows,
+                    body.awardTieOrder || [],
+                    body.awardRuling || "",
+                    { scheduleId: schedule.id, rows: body.placings },
+                  )
+                : undefined;
+            if (
+              impact &&
+              tallyAfter(state, category.id, impact).some((row) =>
+                [row.points, row.gold, row.silver, row.bronze].some(
+                  (value) => value < 0,
+                ),
+              )
+            )
+              throw new Error(
+                "This correction would make an official total negative. Reconcile the college tally before publishing.",
+              );
+            const command =
+              schedule.kind === "placing" && !includePlacings
+                ? {
+                    action: "schedule.save",
+                    schedule: Object.fromEntries(
+                      Object.entries({
+                        ...schedule,
+                        status: "completed",
+                      }).filter(
+                        ([key]) =>
+                          !["publishedId", "scoringVersion"].includes(key),
+                      ),
+                    ),
+                  }
+                : {
+                    action: "result.save",
+                    scheduleId: schedule.id,
+                    body,
+                    submit: publish,
+                    publish,
+                    replacesId: draft?.id || null,
+                    baseId: schedule.publishedId,
+                    reason: String(form.get("reason") || ""),
+                    ...(impact
+                      ? {
+                          expectedTotals: expectedTally(state),
+                          expectedAfterTotals: expectedTallyAfter(
+                            state,
+                            category.id,
+                            impact,
+                          ),
+                          ruleVersion: category.version,
+                        }
+                      : {}),
+                  };
+            setLocalError("");
+            if (publish) setProposal({ command, body, impact });
+            else if (await run(command)) dialog.complete();
+          } catch (error) {
+            setLocalError((error as Error).message);
+          }
         }}
       >
-        {s.kind === "match" ? (
+        {schedule.kind === "match" ? (
           <>
+            <label>
+              Match result
+              <select
+                aria-label="Match result"
+                value={winner}
+                disabled={outcome !== "normal"}
+                onChange={(event) => setWinner(event.target.value)}
+              >
+                <option value="">Choose a result</option>
+                {entries.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {displayEntryLabel(entry)} won
+                  </option>
+                ))}
+                {category.event === "Chess" ? (
+                  <option value="draw">Draw</option>
+                ) : null}
+              </select>
+            </label>
             <div className="form-grid score-entry-grid">
-              {s.entryIds.map((id, i) => {
-                const entry = state.entries.find((e) => e.id === id);
-                return (
-                  <label key={id}>
-                    <span className="score-entry-label">
-                      {entry ? (
-                        <CollegeCrest id={entry.collegeId} size={36} />
-                      ) : null}
-                      {entry ? displayEntryLabel(entry) : id} score
-                    </span>
-                    <input
-                      name={i ? "scoreB" : "scoreA"}
-                      type="number"
-                      min="0"
-                      max="99999"
-                      step={c.event === "Chess" ? "0.5" : "1"}
-                      defaultValue={(i ? old?.scoreB : old?.scoreA) ?? ""}
-                    />
-                  </label>
-                );
-              })}
+              {entries.map((entry, index) => (
+                <label key={entry.id}>
+                  <span className="score-entry-label">
+                    <CollegeCrest id={entry.collegeId} size={36} />
+                    {displayEntryLabel(entry)} score (optional)
+                  </span>
+                  <input
+                    name={index ? "scoreB" : "scoreA"}
+                    type="number"
+                    min="0"
+                    max="99999"
+                    step={category.event === "Chess" ? "0.5" : "1"}
+                    value={index ? scoreB : scoreA}
+                    onChange={(event) =>
+                      index
+                        ? setScoreB(event.target.value)
+                        : setScoreA(event.target.value)
+                    }
+                  />
+                </label>
+              ))}
             </div>
             <div className="form-grid">
               <label>
                 Outcome
-                <select name="outcome" defaultValue={old?.outcome || "normal"}>
+                <select
+                  name="outcome"
+                  value={outcome}
+                  onChange={(event) => {
+                    const next = event.target.value as ResultBody["outcome"];
+                    setOutcome(next);
+                    if (next === "forfeitA") setWinner(schedule.entryIds[1]);
+                    if (next === "forfeitB") setWinner(schedule.entryIds[0]);
+                    if (next === "double_forfeit") {
+                      setWinner("");
+                      setScoreA("0");
+                      setScoreB("0");
+                    }
+                  }}
+                >
                   <option value="normal">Played normally</option>
-                  <option value="forfeitA">First side forfeited</option>
-                  <option value="forfeitB">Second side forfeited</option>
-                  {c.event === "CODM" && s.table === "codm" ? (
-                    <option value="double_forfeit">
-                      Both sides forfeited (enter 0–0)
-                    </option>
+                  <option value="forfeitA">
+                    {entries[0] ? displayEntryLabel(entries[0]) : "First side"}{" "}
+                    forfeited
+                  </option>
+                  <option value="forfeitB">
+                    {entries[1] ? displayEntryLabel(entries[1]) : "Second side"}{" "}
+                    forfeited
+                  </option>
+                  {category.event === "CODM" && schedule.table === "codm" ? (
+                    <option value="double_forfeit">Both sides forfeited</option>
                   ) : null}
                 </select>
               </label>
@@ -419,43 +692,75 @@ export default function ResultEditor({
                 Internal official ruling
                 <input
                   name="matchRuling"
-                  defaultValue={old?.ruling || ""}
+                  defaultValue={savedFields.matchRuling}
+                  required={outcome !== "normal"}
                   maxLength={2000}
                 />
               </label>
             </div>
+            {schedule.table !== "none" ? (
+              <p className="small muted">
+                Win/loss is recorded without scores. Map statistics and
+                score-dependent league points remain unavailable until both
+                scores are entered.
+              </p>
+            ) : null}
           </>
         ) : (
-          <PlacingsEditor entries={entries} rows={rows} onChange={setRows} />
+          <>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={includePlacings}
+                disabled={!!schedule.publishedId}
+                onChange={(event) => setIncludePlacings(event.target.checked)}
+              />
+              Include optional event placings
+            </label>
+            {includePlacings ? (
+              <PlacingsEditor
+                entries={entries}
+                rows={rows}
+                onChange={setRows}
+              />
+            ) : (
+              <p className="muted">
+                Mark the event completed without recording a win, loss, placing,
+                or tally points.
+              </p>
+            )}
+          </>
         )}
-        <label>
-          Public result note (optional)
-          <textarea
-            className="resize-none"
-            name="note"
-            defaultValue={old?.note || ""}
-            maxLength={2000}
-          />
-        </label>
-        {s.publishedId ? (
+        {schedule.kind === "match" || includePlacings ? (
+          <label>
+            Public result note (optional)
+            <textarea
+              className="resize-none"
+              name="note"
+              defaultValue={savedFields.note}
+              maxLength={2000}
+            />
+          </label>
+        ) : null}
+        {schedule.publishedId ? (
           <label>
             Correction reason
             <input
               name="reason"
               required
-              defaultValue={latest?.reason || ""}
+              defaultValue={savedFields.reason}
               maxLength={2000}
             />
           </label>
         ) : null}
-        {award ? (
+        {calculated ? (
           <fieldset>
-            <legend>Published championship award affected</legend>
+            <legend>Calculated championship award affected</legend>
             <p>
-              The reviewer will approve the result and its award impact
-              together.
+              The result and updated calculated award publish together after the
+              tally preview.
             </p>
-            {c.aggregation === "direct" ? (
+            {category.aggregation === "direct" ? (
               <PlacingsEditor
                 entries={awardEntries}
                 rows={awardRows}
@@ -463,33 +768,55 @@ export default function ResultEditor({
               />
             ) : (
               <p className="muted">
-                Sub-point totals and championship points will be recalculated.
+                Discipline sub-points and championship points will be
+                recalculated.
               </p>
             )}
             <TieFields
               state={state}
-              categoryId={c.id}
-              override={{ scheduleId: s.id, rows }}
+              categoryId={category.id}
+              override={{
+                scheduleId: schedule.id,
+                rows: includePlacings ? rows : [],
+              }}
+              initialOrder={savedFields.order}
+              initialRuling={savedFields.awardRuling}
             />
           </fieldset>
+        ) : award ? (
+          <p className="muted">
+            The independently certified championship standings remain as
+            published.
+          </p>
         ) : null}
         <div className="actions">
-          <button name="intent" value="draft" disabled={busy || pending}>
+          <button
+            name="intent"
+            value="draft"
+            disabled={
+              busy ||
+              pending ||
+              (schedule.kind === "placing" && !includePlacings)
+            }
+          >
             Save draft
           </button>
           <button
             name="intent"
-            value="submit"
+            value="publish"
             className="primary"
             disabled={busy || pending}
           >
-            {busy ? "Saving…" : "Submit for review"}
+            {schedule.kind === "placing" && !includePlacings
+              ? "Review and mark completed"
+              : "Review and publish result"}
           </button>
         </div>
       </StaffForm>
     </section>
   );
 }
+
 function ChampionshipForm({
   state: initialState,
   categoryId,
@@ -501,106 +828,335 @@ function ChampionshipForm({
   run: Run;
   busy: boolean;
 }) {
-  const { complete } = useStaffDialogClose()!;
+  const dialog = useStaffDialogClose()!;
   const [state] = useState(initialState);
-  const pending = initialState.revisions.find(
-    (r) =>
-      r.categoryId === categoryId &&
-      r.kind === "award" &&
-      r.status === "pending",
-  );
-  const c = state.categories.find((c) => c.id === categoryId);
-  const schedules = state.schedules.filter(
-      (s) => s.categoryId === categoryId && s.status !== "cancelled",
-    ),
-    entryIds = [...new Set(schedules.flatMap((s) => s.entryIds))],
-    entries = state.entries.filter((e) => entryIds.includes(e.id));
-  const award = state.revisions.find(
+  const category = state.categories.find((item) => item.id === categoryId)!;
+  const awardRevision = state.revisions.find(
     (r) =>
       r.categoryId === categoryId &&
       r.kind === "award" &&
       r.status === "approved",
   );
+  const draft = state.revisions.find(
+    (r) =>
+      r.categoryId === categoryId && r.kind === "award" && r.status === "draft",
+  );
+  const pending = state.revisions.some(
+    (r) =>
+      r.categoryId === categoryId &&
+      r.kind === "award" &&
+      r.status === "pending",
+  );
+  const old = (draft?.body || awardRevision?.body) as AwardBody | undefined;
+  const [method, setMethod] = useState<"certified" | "calculated">(
+    old?.method || (draft || awardRevision ? "calculated" : "certified"),
+  );
+  const schedules = state.schedules.filter(
+    (item) => item.categoryId === categoryId && item.status !== "cancelled",
+  );
+  const scheduledIds = new Set(schedules.flatMap((item) => item.entryIds));
+  const candidateEntries = state.entries.filter(
+    (entry) => entry.categoryId === categoryId,
+  );
+  const entries =
+    method === "calculated"
+      ? candidateEntries.filter((entry) => scheduledIds.has(entry.id))
+      : candidateEntries;
+  const collegeEntries: Entry[] = COLLEGES.map((college) => ({
+    id: college.id,
+    collegeId: college.id,
+    categoryId,
+    label: displayCode(college.id),
+  }));
   const [rows, setRows] = useState<Placing[]>(
-    entries.map((e) => {
-      const r = (award?.body as AwardBody | undefined)?.rows.find(
-        (r) => r.entryId === e.id,
+    candidateEntries.map((entry) => {
+      const input = old?.draftInputs?.placings.find(
+        (item) => item.entryId === entry.id,
       );
+      if (input) return input;
+      const row = old?.rows.find((item) => item.entryId === entry.id);
       return {
-        entryId: e.id,
-        rank: r?.rank || null,
-        eligible: r?.eligible || false,
+        entryId: entry.id,
+        rank: row?.rank ?? null,
+        eligible: row?.eligible ?? false,
       };
     }),
   );
-  if (!c) return <p>Select an event.</p>;
-  const unresolved = schedules.filter(
-    (s) => !s.publishedId || s.status !== "completed",
+  const [collegeRows, setCollegeRows] = useState<Placing[]>(
+    COLLEGES.map((college) => {
+      const input = old?.draftInputs?.collegePlacings.find(
+        (item) => item.collegeId === college.id,
+      );
+      if (input)
+        return {
+          entryId: college.id,
+          rank: input.rank,
+          eligible: input.eligible,
+        };
+      const row = old?.rows.find((item) => item.collegeId === college.id);
+      return {
+        entryId: college.id,
+        rank: row?.rank ?? null,
+        eligible: row?.eligible ?? false,
+      };
+    }),
   );
+  const [proposal, setProposal] = useState<{
+    command: Record<string, unknown>;
+    award: AwardBody;
+  } | null>(null);
+  const [localError, setLocalError] = useState("");
+  const unresolved = schedules.filter(
+    (schedule) => !schedule.publishedId || schedule.status !== "completed",
+  );
+  const [savedFields, setSavedFields] = useState<{
+    ruling: string;
+    reason: string;
+    order: string[];
+  }>({
+    ruling: old?.ruling || "",
+    reason: draft?.reason || "",
+    order:
+      old?.draftInputs?.tieOrder ||
+      old?.rows
+        .slice()
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
+        .map((row) => row.collegeId) ||
+      [],
+  });
+  if (proposal)
+    return (
+      <PublishConfirmation
+        title="Confirm championship standings"
+        busy={busy}
+        onBack={() => setProposal(null)}
+        onConfirm={async () => {
+          if (await run(proposal.command)) dialog.complete();
+        }}
+      >
+        <Summary state={state} body={proposal.award} kind="award" />
+        <TallyImpactPreview
+          state={state}
+          categoryId={categoryId}
+          award={proposal.award}
+        />
+      </PublishConfirmation>
+    );
   return (
     <section className="editor dialog-editor">
-      <p>This is the step that adds official points to the college tally.</p>
+      <p>
+        Publish official category placings to add points and medals to the
+        college tally. A replacement removes the previous award’s contribution
+        before adding the new one.
+      </p>
+      {!category.confirmed ? <p className="alert">{category.hold}</p> : null}
       {pending ? (
-        <div className="success" role="status">
-          Championship standings submitted for review.{" "}
-          {(pending.body as AwardBody).rows
-            .map((r) => `${displayCode(r.collegeId)}: ${r.points} points`)
-            .join(" · ")}
-        </div>
-      ) : null}
-      {!c.confirmed ? <p className="alert">{c.hold}</p> : null}
-      {unresolved.length ? (
         <p className="alert">
-          {unresolved.length} scheduled competition(s) still need approved
-          results or a recorded cancellation.
+          A legacy championship submission awaits review. Resolve it in the
+          review queue first.
         </p>
       ) : null}
-      {c.aggregation === "subpoints" ? (
-        <p className="muted">
-          General points are calculated from approved final discipline/division
-          sub-points. Every active discipline must be resolved or cancelled.
+      {localError ? (
+        <p className="alert" role="alert">
+          {localError}
         </p>
       ) : null}
       <StaffForm
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          if (
-            await run({
-              action: "award.submit",
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget),
+            publish =
+              (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
+                "value",
+              ) === "publish";
+          const selectedRows = entries.map((entry) =>
+            rows.find((row) => row.entryId === entry.id)!,
+          );
+          const collegePlacings = collegeRows.map((row) => ({
+            collegeId: row.entryId,
+            rank: row.rank,
+            eligible: row.eligible,
+          }));
+          const order = tieOrder(form.get("tieOrder")),
+            ruling = String(form.get("ruling") || "");
+          setSavedFields({
+            ruling,
+            reason: String(form.get("reason") || ""),
+            order,
+          });
+          try {
+            if (
+              publish &&
+              method === "calculated" &&
+              (unresolved.length || !schedules.length)
+            )
+              throw new Error(
+                "Calculated standings need approved results for every scheduled competition. Use certified standings to enter the official college placings independently.",
+              );
+            const next: AwardBody =
+              method === "calculated"
+                ? calculatedPreview(
+                    state,
+                    categoryId,
+                    selectedRows,
+                    order,
+                    ruling,
+                  )
+                : {
+                    rows:
+                      category.policy === "college"
+                        ? directCollegeAwards(
+                            category,
+                            collegePlacings as Parameters<
+                              typeof directCollegeAwards
+                            >[1],
+                            publish,
+                          )
+                        : directAwards(
+                            category,
+                            selectedRows,
+                            entries,
+                            publish,
+                          ),
+                    method: "certified",
+                    source: "",
+                    ruleVersion: category.version,
+                    ruling,
+                  };
+            if (
+              publish &&
+              tallyAfter(state, categoryId, next).some((row) =>
+                [row.points, row.gold, row.silver, row.bronze].some(
+                  (value) => value < 0,
+                ),
+              )
+            )
+              throw new Error(
+                "This award would make an official total negative. Reconcile the college tally before publishing.",
+              );
+            const command = {
+              action: "award.save",
               categoryId,
-              placings: rows,
-              tieOrder: tieOrder(f.get("tieOrder")),
-              ruling: f.get("ruling") || "",
-              baseId: award?.id || null,
-              reason: f.get("reason") || "",
-            })
-          )
-            complete();
+              method,
+              ruleVersion: category.version,
+              placings:
+                method === "certified" && category.policy === "college"
+                  ? []
+                  : selectedRows,
+              collegePlacings:
+                method === "certified" && category.policy === "college"
+                  ? collegePlacings
+                  : [],
+              tieOrder: order,
+              ruling,
+              baseId: awardRevision?.id || null,
+              reason: String(form.get("reason") || ""),
+              replacesId: draft?.id || null,
+              publish,
+              ...(publish
+                ? {
+                    expectedTotals: expectedTally(state),
+                    expectedAfterTotals: expectedTallyAfter(
+                      state,
+                      categoryId,
+                      next,
+                    ),
+                  }
+                : {}),
+            };
+            setLocalError("");
+            if (publish) setProposal({ command, award: next });
+            else if (await run(command)) dialog.complete();
+          } catch (error) {
+            setLocalError((error as Error).message);
+          }
         }}
       >
-        {c.aggregation === "direct" ? (
+        <label>
+          Standings source
+          <select
+            value={method}
+            onChange={(event) => setMethod(event.target.value as typeof method)}
+          >
+            <option value="certified">
+              Certified standings · enter official placings
+            </option>
+            <option value="calculated">
+              Calculated standings · use approved event results
+            </option>
+          </select>
+        </label>
+        {method === "certified" ? (
+          <p className="muted">
+            Enter the committee’s certified final placings. Schedules and match
+            results are independent.{" "}
+            {category.policy !== "college"
+              ? "This category keeps its configured candidate aggregation policy."
+              : "All seven colleges are listed; mark participation and the official podium."}
+          </p>
+        ) : (
+          <p className="muted">
+            Existing calculation rules remain available. All scheduled
+            competitions must have approved results; sub-point events need their
+            final discipline placings. Calculated drafts also require complete
+            calculation inputs.
+          </p>
+        )}
+        {method === "certified" && category.policy === "college" ? (
+          <PlacingsEditor
+            entries={collegeEntries}
+            rows={collegeRows}
+            onChange={setCollegeRows}
+          />
+        ) : category.aggregation === "direct" || method === "certified" ? (
           <PlacingsEditor entries={entries} rows={rows} onChange={setRows} />
         ) : null}
-        <TieFields state={state} categoryId={categoryId} />
-        {award ? (
+        {method === "calculated" ? (
+          <TieFields
+            state={state}
+            categoryId={categoryId}
+            initialOrder={savedFields.order}
+            initialRuling={savedFields.ruling}
+          />
+        ) : (
+          <label>
+            Official championship ruling (optional)
+            <textarea
+              className="resize-none"
+              name="ruling"
+              defaultValue={savedFields.ruling}
+              maxLength={2000}
+            />
+          </label>
+        )}
+        {awardRevision ? (
           <label>
             Award correction reason
-            <input name="reason" required maxLength={2000} />
+            <input
+              name="reason"
+              required
+              defaultValue={savedFields.reason}
+              maxLength={2000}
+            />
           </label>
         ) : null}
-        <button
-          className="primary"
-          disabled={
-            busy ||
-            !!pending ||
-            !c.confirmed ||
-            !!unresolved.length ||
-            !schedules.length
-          }
-        >
-          Submit championship standings
-        </button>
+        <div className="actions">
+          <button
+            name="intent"
+            value="draft"
+            disabled={busy || pending || !category.confirmed}
+          >
+            Save draft
+          </button>
+          <button
+            className="primary"
+            name="intent"
+            value="publish"
+            disabled={busy || pending || !category.confirmed}
+          >
+            Review and publish standings
+          </button>
+        </div>
       </StaffForm>
     </section>
   );
@@ -622,25 +1178,23 @@ export function AwardEditor({
   onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const category = state.categories.find((c) => c.id === categoryId);
-  if (!category) return <p>Select an event.</p>;
-  const pending = state.revisions.find(
-    (r) =>
-      r.categoryId === categoryId &&
-      r.kind === "award" &&
-      r.status === "pending",
-  );
+  const category = state.categories.find((item) => item.id === categoryId);
+  if (!category || state.user.role === "officer") return null;
   const approved = state.revisions.find(
     (r) =>
       r.categoryId === categoryId &&
       r.kind === "award" &&
       r.status === "approved",
   );
-  const schedules = state.schedules.filter(
-    (s) => s.categoryId === categoryId && s.status !== "cancelled",
+  const draft = state.revisions.find(
+    (r) =>
+      r.categoryId === categoryId && r.kind === "award" && r.status === "draft",
   );
-  const unresolved = schedules.filter(
-    (s) => !s.publishedId || s.status !== "completed",
+  const pending = state.revisions.find(
+    (r) =>
+      r.categoryId === categoryId &&
+      r.kind === "award" &&
+      r.status === "pending",
   );
   return (
     <section className="stack">
@@ -653,68 +1207,43 @@ export function AwardEditor({
           <Trophy size={24} aria-hidden="true" />
         </div>
         <p className="muted">
-          Championship standings award official college points after review.
+          Certified standings publish independently of match results. Calculated
+          awards remain available using the established rules.
         </p>
         <p className="small">
           {pending
-            ? "Awaiting review"
-            : approved
-              ? "Published championship"
-              : "Not finalized"}{" "}
-          · {schedules.length - unresolved.length}/{schedules.length}{" "}
-          competitions resolved
+            ? "Legacy submission awaiting review"
+            : draft
+              ? "Private draft saved"
+              : approved
+                ? "Published championship"
+                : "No championship standings published"}
         </p>
         {!category.confirmed ? <p className="alert">{category.hold}</p> : null}
-        {unresolved.length ? (
-          <p className="small muted">
-            Resolve {unresolved.length} remaining competition(s) before
-            submitting.
-          </p>
-        ) : null}
         {approved ? (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>College</th>
-                  <th>Place</th>
-                  <th>Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(approved.body as AwardBody).rows.map((row, i) => (
-                  <tr key={`${row.collegeId}-${i}`}>
-                    <th scope="row">
-                      <CollegeIdentity id={row.collegeId} />
-                    </th>
-                    <td>
-                      {row.rank ||
-                        (row.eligible ? "Participation" : "Not eligible")}
-                    </td>
-                    <td className="numeric">{row.points}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <p className="small muted">
+              Published source:{" "}
+              {(approved.body as AwardBody).method === "certified"
+                ? "Certified standings"
+                : "Calculated standings"}
+            </p>
+            <Summary state={state} body={approved.body} kind="award" />
+          </>
         ) : null}
         <button
           className="primary"
-          disabled={
-            busy ||
-            !!pending ||
-            !category.confirmed ||
-            !!unresolved.length ||
-            !schedules.length
-          }
+          disabled={busy || !!pending || !category.confirmed}
           onClick={() => {
             onOpen?.();
             setOpen(true);
           }}
         >
-          {approved
-            ? "Correct championship standings"
-            : "Finalize championship standings"}
+          {draft
+            ? "Continue standings draft"
+            : approved
+              ? "Correct championship standings"
+              : "Set championship standings"}
         </button>
         <EventRevisionHistory
           state={state}
@@ -727,7 +1256,7 @@ export function AwardEditor({
           title={
             approved
               ? "Correct championship standings"
-              : "Finalize championship standings"
+              : "Set championship standings"
           }
           description={categoryLabel(category)}
           busy={busy}

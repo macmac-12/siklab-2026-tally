@@ -162,7 +162,7 @@ export function publicCacheNamespace(
     database,
     env.VERCEL_ENV || env.NODE_ENV || "local",
   ];
-  return `siklab-public-v2-${createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 24)}`;
+  return `siklab-public-v3-${createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 24)}`;
 }
 
 export const publicCacheTag = () => publicCacheNamespace();

@@ -84,16 +84,17 @@ const source=await (await page.request.get('/api/public/overview?view=schedules&
 const categoryId='basketball-men', colleges=['BUHI','CCS','CAS','CEA','CHS','CTDE','CTHBM'];
 const entrants=colleges.map(id=>source.entries.find(e=>e.categoryId===categoryId&&e.collegeId===id));
 if(entrants.some(e=>!e))throw Error('Missing rehearsal college entries');
-const names=['Two-college clash','Three-college clash','Campus field','BC approved winner','Approved draw','Double forfeit','CCS placing winner','Awaiting reviewed result'];
+const names=['Two-college clash','Three-college clash','Campus field','BC approved winner','Approved draw','Double forfeit','CCS placing winner','Awaiting reviewed result','Completed campus field','Scoreless BC winner','Scoreless draw','Completed legacy body'];
 const schedules=names.map((title,index)=>({
  ...source.schedules[0],id:`refinement-${index}`,title,categoryId,disciplineId:null,date:'2026-11-23',
- kind:[1,2,6].includes(index)?'placing':'match', entryIds:(index===2?entrants:[1,6].includes(index)?entrants.slice(0,3):entrants.slice(0,2)).map(e=>e.id),
+ kind:[1,2,6,8,11].includes(index)?'placing':'match', entryIds:([2,8,11].includes(index)?entrants:[1,6].includes(index)?entrants.slice(0,3):entrants.slice(0,2)).map(e=>e.id),
  stage:'Final',startsAt:null,endsAt:null,followsId:null,venue:'Rehearsal arena',reason:'',
- status:index>=3?'completed':'upcoming',publishedId:index>=3&&index!==7?`approved-${index}`:null,
+ status:index>=3?'completed':'upcoming',publishedId:index>=3&&![7,8].includes(index)?`approved-${index}`:null,
 }));
 const results=schedules.filter(s=>s.publishedId).map(s=>{
  const index=Number(s.id.split('-').pop());return {id:s.publishedId,scheduleId:s.id,categoryId,publishedAt:'2026-11-23T09:00:00Z',body:{
- scoreA:index===6?null:index===5?0:2,scoreB:index===6?null:index===4?2:index===5?0:1,
+ scoreA:[6,9,10,11].includes(index)?null:index===5?0:2,scoreB:[6,9,10,11].includes(index)?null:index===4?2:index===5?0:1,
+ ...(index===9?{decision:{kind:'winner',entryId:s.entryIds[0]}}:index===10?{decision:{kind:'draw'}}:{}),
  outcome:index===5?'double_forfeit':'normal',placings:index===6?s.entryIds.map((entryId,i)=>({entryId,rank:[2,1,3][i],eligible:true})):[],note:'Approved rehearsal example',ruling:'',
  }};
 });
@@ -102,14 +103,18 @@ await page.route('**/api/public/**',route=>route.fulfill({json:payload}));
 const evidence=[];
 for(const appearance of ['dark','light']) {
  await page.evaluate(theme=>localStorage.setItem('siklab-theme',theme),appearance);
- await page.setViewportSize({width:1440,height:1000});await page.goto('/schedules?date=2026-11-23');await page.locator('.game-card').nth(7).waitFor();
- const cards=await page.locator('.game-card').evaluateAll(elements=>elements.map(el=>({title:el.querySelector('h3').textContent,colleges:el.dataset.colleges,winner:el.classList.contains('game-card--winner'),gradient:getComputedStyle(el).backgroundImage,third:getComputedStyle(el).getPropertyValue('--clash-c').trim(),border:getComputedStyle(el).borderLeftColor,text:el.textContent})));
+ await page.setViewportSize({width:1440,height:1000});await page.goto('/schedules?date=2026-11-23');await page.locator('.game-card').nth(11).waitFor();
+ const cards=await page.locator('.game-card').evaluateAll(elements=>elements.map(el=>({title:el.querySelector('h3').textContent,colleges:el.dataset.colleges,winner:el.classList.contains('game-card--winner'),gradient:getComputedStyle(el).backgroundImage,rainbow:el.classList.contains('game-card--multicollege'),border:getComputedStyle(el).borderLeftColor,text:el.textContent,scoreCount:el.querySelectorAll('.compact-result-side > strong').length,outcomes:[...el.querySelectorAll('.compact-match-score .match-outcome')].map(x=>x.textContent)})));
  if(cards[0].colleges!=='2'||!cards[0].gradient.includes('linear-gradient'))throw Error('Two-college clash absent');
- if(cards[1].colleges!=='3'||!cards[1].gradient.includes('linear-gradient')||cards[1].third.toLowerCase()!=='#d94846')throw Error('Third college color absent');
- if(cards[2].colleges!=='4'||cards[2].gradient!=='none')throw Error('Large field fallback absent');
+ if(cards[1].colleges!=='3'||!cards[1].rainbow||!cards[1].gradient.includes('linear-gradient'))throw Error('Three-college rainbow absent');
+ if(cards[2].colleges!=='7'||!cards[2].rainbow||cards[2].gradient!==cards[1].gradient)throw Error('Large field does not share full college rainbow');
  if(!cards[3].winner||!cards[3].text.includes('BC won')||cards[3].border!=='rgb(212, 61, 158)')throw Error('Approved BC winner styling incorrect');
  if(cards[4].winner||cards[5].winner||cards[7].winner)throw Error('Unresolved or unreviewed winner invented');
  if(!cards[6].winner||!cards[6].text.includes('CCS won'))throw Error('Placing winner incorrect');
+ if(cards[8].winner||cards[8].text.includes('Awaiting result')||!cards[8].text.includes('Completed'))throw Error('Completed field fabricated a result or awaited one');
+ if(!cards[9].winner||cards[9].scoreCount!==0||cards[9].outcomes.join('|')!=='Won|Lost')throw Error('Scoreless winner missing or numeric score invented');
+ if(cards[10].winner||cards[10].scoreCount!==0||cards[10].outcomes.join('|')!=='Draw|Draw')throw Error('Explicit scoreless draw incorrect');
+ if(cards[11].winner)throw Error('Empty placing body invented a winner');
  if(cards.some(c=>!c.text.includes('Time TBA')))throw Error('Date-only time label absent');
  const siblingBefore=(await page.locator('.game-card').nth(7).boundingBox()).height;
  await page.locator('.game-details summary').nth(6).click();await page.locator('.game-details[open] .placings').waitFor();
@@ -121,6 +126,8 @@ for(const appearance of ['dark','light']) {
  const screenshot=`output/playwright/refinement-${appearance}-clash-cases.png`;await page.screenshot({path:screenshot,fullPage:true});
  evidence.push({appearance,cards,siblingBefore,siblingAfter,firstCardY,screenshot});
 }
+await page.emulateMedia({forcedColors:'active'});await page.reload();await page.locator('.game-card--multicollege').first().waitFor();const forced=await page.locator('.game-card').evaluateAll(elements=>elements.every(el=>getComputedStyle(el).backgroundImage==='none'));if(!forced)throw Error('Forced-colors gradient fallback absent');await page.emulateMedia({forcedColors:'none'});
+await page.goto('/results?college=CCS');const completedHistory=page.locator('.college-result').filter({has:page.getByText('Completed legacy body',{exact:true})});await completedHistory.waitFor();const completedText=await completedHistory.innerText();if(!completedText.includes('Completed')||completedText.includes('Not eligible')||completedText.includes('View full placings'))throw Error('Empty placing result misrepresented as per-college placings');await completedHistory.locator('summary').click();if(await completedHistory.locator('.placings').count())throw Error('Empty placing list rendered');evidence.push({emptyPlacingBodyHistoryCompleted:true});
 await page.unrouteAll();return evidence;
 ''')
     checks.append({"name": "College clash, approved winners and date-only fixtures", "pass": True, "evidence": rare})

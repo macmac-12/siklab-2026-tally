@@ -206,7 +206,11 @@ test("event administrators retain operations but cannot access account or system
     startsAt: null,
     endsAt: null,
   });
-  const { publishedId: _published, ...input } = fixture;
+  const {
+    publishedId: _published,
+    scoringVersion: _scoringVersion,
+    ...input
+  } = fixture;
   await act(
     {
       action: "schedule.save",
@@ -262,7 +266,11 @@ test("date-only schedules preserve null times and end time still requires a star
     endsAt: null,
     date: "2026-11-25",
   });
-  const { publishedId: _published, ...input } = timed;
+  const {
+    publishedId: _published,
+    scoringVersion: _scoringVersion,
+    ...input
+  } = timed;
   await assert.rejects(
     () =>
       act({ action: "schedule.save", schedule: { ...input, startsAt: null } }),
@@ -368,6 +376,7 @@ test("overlap and stale versions cannot silently overwrite", async () => {
   const s = await schedule("volleyball-men", { bestOf: 3 });
   const data = { ...s };
   delete (data as Partial<Schedule>).publishedId;
+  delete (data as Partial<Schedule>).scoringVersion;
   await assert.rejects(
     () =>
       schedule("volleyball-men", {
@@ -671,12 +680,12 @@ test("bracket permissions, publication, stale saves, idempotency and backup v2/v
         },
         officer,
       ),
-    /not assigned/,
+    /Administrator/,
   );
   const key = randomUUID();
   const body = { action: "bracket.save", bracket: graph, publish: false };
-  const saved = (await act(body, officer, key)) as { id: string };
-  assert.deepEqual(await act(body, officer, key), saved);
+  const saved = (await act(body, eventAdmin, key)) as { id: string };
+  assert.deepEqual(await act(body, eventAdmin, key), saved);
   assert.equal(
     (
       await publicState(
@@ -693,7 +702,7 @@ test("bracket permissions, publication, stale saves, idempotency and backup v2/v
       bracket: graph,
       publish: true,
     },
-    officer,
+    eventAdmin,
   );
   const published = await publicState(
     new URLSearchParams("view=brackets&category=basketball-men"),
@@ -734,7 +743,7 @@ test("bracket permissions, publication, stale saves, idempotency and backup v2/v
   assert.equal(resolved.brackets[0].resolved[1].winner, fixture.entryIds[0]);
   assert.equal(JSON.stringify(resolved.awards), awardsBefore);
   const backup = await exportBackup(admin);
-  assert.equal(backup.version, 4);
+  assert.equal(backup.version, 5);
   assert.equal(backup.tables.brackets.length, 1);
   await restoreBackup(admin, { backup, preview: true });
   const legacy = structuredClone(backup);
@@ -861,7 +870,7 @@ test("disabled staff loses access and rule history persists", async () => {
 test("backup preview rolls back; invalid reference and negative points rejected; restore exact data", async () => {
   const backup = await exportBackup(admin);
   const before = await state();
-  assert.equal(backup.version, 4);
+  assert.equal(backup.version, 5);
   assert(backup.tables.tally_adjustments.length > 0);
   const preview = await restoreBackup(admin, { backup, preview: true });
   assert.equal(preview.preview, true);

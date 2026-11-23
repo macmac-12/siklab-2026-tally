@@ -25,6 +25,7 @@ import {
 import {
   awardSource,
   calculateAward,
+  calculateCertifiedAward,
   findCategory,
   hypotheticalResult,
   insertRevision,
@@ -39,7 +40,165 @@ import type {
   AwardBody,
   Snapshot,
   Placing,
+  TallyTotals,
 } from "../model";
+
+type TallyPreview = Array<TallyTotals & { collegeId: string }>;
+
+async function checkTallyPreview(
+  db: PoolClient,
+  state: Snapshot,
+  expected: TallyPreview | undefined,
+  required = false,
+  replacement?: { categoryId: string; body: AwardBody },
+) {
+  if (!expected) {
+    if (required)
+      fail("Preview the college tally before publishing this award.");
+    return;
+  }
+  const awards = state.revisions
+    .filter(
+      (r) =>
+        r.kind === "award" &&
+        r.status === "approved" &&
+        r.categoryId !== replacement?.categoryId,
+    )
+    .map((r) => r.body as AwardBody);
+  if (replacement) awards.push(replacement.body);
+  const current = overall(awards, await tallyAdjustments(db));
+  if (
+    expected.length !== current.length ||
+    new Set(expected.map((row) => row.collegeId)).size !== current.length ||
+    current.some((row) => {
+      const prior = expected.find((item) => item.collegeId === row.id);
+      return !prior || !isDeepStrictEqual(totalsOnly(prior), totalsOnly(row));
+    })
+  )
+    fail(
+      "The official tally changed. Reload and preview the new totals before publishing.",
+      409,
+    );
+}
+
+const sameAward = (a: AwardBody, b: AwardBody) =>
+  isDeepStrictEqual(
+    { ...a, method: a.method || "calculated" },
+    { ...b, method: b.method || "calculated" },
+  );
+
+function pendingRevision(
+  id: string,
+  user: User,
+  categoryId: string,
+  scheduleId: string | null,
+  kind: Revision["kind"],
+  body: ResultBody | AwardBody,
+  baseId: string | null,
+  reason: string,
+): Revision {
+  return {
+    id,
+    categoryId,
+    scheduleId,
+    kind,
+    body,
+    baseId,
+    reason,
+    status: "pending",
+    actorId: user.id,
+    reviewNote: "",
+    createdAt: new Date().toISOString(),
+    reviewedAt: null,
+    reviewerId: null,
+  };
+}
+
+/** Both direct publication and legacy review use the same transactional checks. */
+async function approveRevision(
+  db: PoolClient,
+  user: User,
+  r: Revision,
+  state: Snapshot,
+  reviewNote: string,
+) {
+  if (r.kind === "award") {
+    const body = r.body as AwardBody;
+    if (
+      body.source !==
+      awardSource(state, r.categoryId, body.method || "calculated")
+    )
+      fail(
+        "Results, entries or rules changed after submission. Reload and prepare this award again.",
+        409,
+      );
+  } else {
+    const schedule = state.schedules.find((s) => s.id === r.scheduleId)!;
+    const body = r.body as ResultBody;
+    validateResult(state, schedule, body);
+    const existingAward = publicAward(state, r.categoryId);
+    if (
+      existingAward &&
+      (existingAward.body as AwardBody).method !== "certified"
+    ) {
+      if (
+        state.revisions.some(
+          (revision) =>
+            revision.categoryId === r.categoryId &&
+            revision.kind === "award" &&
+            ["draft", "pending"].includes(revision.status),
+        )
+      )
+        fail(
+          "Resolve the championship draft or submission before correcting this calculated result.",
+          409,
+        );
+      const impact = calculateAward(
+        hypotheticalResult(state, r),
+        r.categoryId,
+        body.awardPlacings || [],
+        body.awardTieOrder || [],
+        body.awardRuling || "",
+      );
+      if (!body.impact || !sameAward(impact, body.impact))
+        fail(
+          "Award impact changed. Reload and prepare the correction again.",
+          409,
+        );
+      const impactId = await insertRevision(
+        db,
+        user,
+        r.categoryId,
+        null,
+        "award",
+        impact,
+        existingAward.id,
+        `Result correction: ${r.reason}`,
+      );
+      await publish(
+        db,
+        user,
+        pendingRevision(
+          impactId,
+          user,
+          r.categoryId,
+          null,
+          "award",
+          impact,
+          existingAward.id,
+          `Result correction: ${r.reason}`,
+        ),
+        state,
+        reviewNote,
+      );
+    } else if (body.impact)
+      fail(
+        "The affected award changed. Reload and prepare the correction again.",
+        409,
+      );
+  }
+  await publish(db, user, r, state, reviewNote);
+}
 async function publish(
   db: PoolClient,
   user: User,
@@ -150,10 +309,12 @@ async function execute(
       return { id, collegeId: command.collegeId, totals: command.totals };
     }
     case "bracket.save":
+      requireAdmin(user);
       return saveBracket(db, user, state, command);
     case "schedule.save":
       return saveSchedule(db, state, user, command.schedule);
     case "entry.add": {
+      requireAdmin(user);
       requireAccess(user, command.categoryId);
       const c = findCategory(state, command.categoryId);
       if (publicAward(state, c.id))
@@ -174,6 +335,7 @@ async function execute(
       return { id };
     }
     case "result.save": {
+      requireAdmin(user);
       const s =
         state.schedules.find((s) => s.id === command.scheduleId) ||
         fail("Schedule not found.", 404);
@@ -205,7 +367,24 @@ async function execute(
         command.body.placings.some((p) => !s.entryIds.includes(p.entryId))
       )
         fail("Draft placings must refer to distinct scheduled entries.");
-      if (command.submit) validateResult(state, s, command.body);
+      const submitting = command.submit || command.publish === true;
+      const currentAward = publicAward(state, s.categoryId);
+      if (
+        submitting &&
+        currentAward &&
+        (currentAward.body as AwardBody).method !== "certified" &&
+        state.revisions.some(
+          (revision) =>
+            revision.categoryId === s.categoryId &&
+            revision.kind === "award" &&
+            ["draft", "pending"].includes(revision.status),
+        )
+      )
+        fail(
+          "Resolve the championship draft or submission before correcting this calculated result.",
+          409,
+        );
+      if (submitting) validateResult(state, s, command.body);
       const body: ResultBody = command.body;
       const id = await insertRevision(
         db,
@@ -216,27 +395,26 @@ async function execute(
         body,
         command.baseId,
         command.reason,
-        command.submit ? "pending" : "draft",
+        submitting ? "pending" : "draft",
       );
       const award = publicAward(state, s.categoryId);
-      if (command.submit && award) {
-        const hypothetical: Revision = {
-          id,
-          categoryId: s.categoryId,
-          scheduleId: s.id,
-          kind: "result",
-          status: "pending",
-          body,
-          baseId: command.baseId,
-          actorId: user.id,
-          reason: command.reason,
-          reviewNote: "",
-          createdAt: new Date().toISOString(),
-          reviewedAt: null,
-          reviewerId: null,
-        };
+      const revision = pendingRevision(
+        id,
+        user,
+        s.categoryId,
+        s.id,
+        "result",
+        body,
+        command.baseId,
+        command.reason,
+      );
+      if (
+        submitting &&
+        award &&
+        (award.body as AwardBody).method !== "certified"
+      ) {
         body.impact = calculateAward(
-          hypotheticalResult(state, hypothetical),
+          hypotheticalResult(state, revision),
           s.categoryId,
           body.awardPlacings || [],
           body.awardTieOrder || [],
@@ -244,9 +422,147 @@ async function execute(
         );
         await db.query("UPDATE revisions SET body=$2 WHERE id=$1", [id, body]);
       }
+      if (command.publish) {
+        if (body.impact) {
+          if (
+            command.ruleVersion !== undefined &&
+            command.ruleVersion !== findCategory(state, s.categoryId).version
+          )
+            fail(
+              "The event rules changed. Reload and preview the correction again.",
+              409,
+            );
+          await checkTallyPreview(db, state, command.expectedTotals);
+          await checkTallyPreview(
+            db,
+            state,
+            command.expectedAfterTotals,
+            !!command.expectedTotals,
+            { categoryId: s.categoryId, body: body.impact },
+          );
+        }
+        await approveRevision(
+          db,
+          user,
+          revision,
+          state,
+          "Published by administrator",
+        );
+      }
       return { id };
     }
+    case "award.save": {
+      requireAdmin(user);
+      requireAccess(user, command.categoryId);
+      const category = findCategory(state, command.categoryId);
+      if (
+        (command.publish || command.ruleVersion !== undefined) &&
+        command.ruleVersion !== category.version
+      )
+        fail(
+          "The event rules changed. Reload and preview the award again.",
+          409,
+        );
+      const current = publicAward(state, command.categoryId);
+      if ((current?.id || null) !== command.baseId)
+        fail("The published award changed. Reload before saving.", 409);
+      if (current && !command.reason.trim())
+        fail("An award correction needs a reason.");
+      const existing = state.revisions.find(
+        (r) =>
+          r.categoryId === command.categoryId &&
+          r.kind === "award" &&
+          ["draft", "pending"].includes(r.status),
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.id !== command.replacesId)
+      )
+        fail(
+          "A draft or submission already exists. Reload the current version.",
+          409,
+        );
+      if (!existing && command.replacesId)
+        fail("This award draft changed. Reload.", 409);
+      if (
+        command.method === "calculated" &&
+        state.revisions.some(
+          (r) =>
+            r.categoryId === command.categoryId &&
+            r.kind === "result" &&
+            r.status === "pending",
+        )
+      )
+        fail(
+          "Publish or reject pending results before calculating this award.",
+        );
+      const body =
+        command.method === "certified"
+          ? calculateCertifiedAward(
+              state,
+              command.categoryId,
+              command.placings,
+              command.collegePlacings,
+              command.ruling,
+              command.publish,
+            )
+          : calculateAward(
+              state,
+              command.categoryId,
+              command.placings,
+              command.tieOrder,
+              command.ruling,
+            );
+      body.method = command.method;
+      if (!command.publish)
+        body.draftInputs = {
+          placings: command.placings,
+          collegePlacings: command.collegePlacings,
+          tieOrder: command.tieOrder,
+        };
+      if (command.publish) {
+        await checkTallyPreview(db, state, command.expectedTotals, true);
+        await checkTallyPreview(db, state, command.expectedAfterTotals, true, {
+          categoryId: command.categoryId,
+          body,
+        });
+      }
+      if (existing)
+        await db.query("UPDATE revisions SET status='superseded' WHERE id=$1", [
+          existing.id,
+        ]);
+      const id = await insertRevision(
+        db,
+        user,
+        command.categoryId,
+        null,
+        "award",
+        body,
+        command.baseId,
+        command.reason,
+        command.publish ? "pending" : "draft",
+      );
+      if (command.publish)
+        await approveRevision(
+          db,
+          user,
+          pendingRevision(
+            id,
+            user,
+            command.categoryId,
+            null,
+            "award",
+            body,
+            command.baseId,
+            command.reason,
+          ),
+          state,
+          "Published by administrator",
+        );
+      return { id, preview: body };
+    }
     case "award.submit": {
+      requireAdmin(user);
       requireAccess(user, command.categoryId);
       const current = publicAward(state, command.categoryId);
       if ((current?.id || null) !== command.baseId)
@@ -255,10 +571,16 @@ async function execute(
         fail("An award correction needs a reason.");
       if (
         state.revisions.some(
-          (r) => r.categoryId === command.categoryId && r.status === "pending",
+          (r) =>
+            r.categoryId === command.categoryId &&
+            (r.status === "pending" ||
+              (r.kind === "award" && r.status === "draft")),
         )
       )
-        fail("Review pending submissions in this category first.");
+        fail(
+          "Resolve the championship draft or pending submissions in this category first.",
+          409,
+        );
       const body = calculateAward(
         state,
         command.categoryId,
@@ -306,54 +628,31 @@ async function execute(
         );
         return { id: r.id };
       }
-      if (r.kind === "award") {
-        const b = r.body as AwardBody;
-        if (b.source !== awardSource(state, r.categoryId))
+      if (r.kind === "award" || (r.body as ResultBody).impact) {
+        if (
+          command.ruleVersion !== undefined &&
+          command.ruleVersion !== findCategory(state, r.categoryId).version
+        )
           fail(
-            "Results, schedules or rules changed after submission. Reject and resubmit this award.",
+            "The event rules changed. Reload and preview the publication again.",
             409,
           );
-      } else {
-        const s = state.schedules.find((s) => s.id === r.scheduleId)!;
-        const b = r.body as ResultBody;
-        validateResult(state, s, b);
-        const existingAward = publicAward(state, r.categoryId);
-        if (existingAward) {
-          const impact = calculateAward(
-            hypotheticalResult(state, r),
-            r.categoryId,
-            b.awardPlacings || [],
-            b.awardTieOrder || [],
-            b.awardRuling || "",
-          );
-          if (!b.impact || !isDeepStrictEqual(impact, b.impact))
-            fail(
-              "Award impact changed. Reject and resubmit the correction.",
-              409,
-            );
-          const impactId = await insertRevision(
-            db,
-            user,
-            r.categoryId,
-            null,
-            "award",
-            impact,
-            existingAward.id,
-            `Result correction: ${r.reason}`,
-          );
-          const impactRevision = {
-            ...r,
-            id: impactId,
-            kind: "award" as const,
-            scheduleId: null,
-            body: impact,
-            baseId: existingAward.id,
-          };
-          await publish(db, user, impactRevision, state, command.reason);
-        } else if (b.impact)
-          fail("The affected award changed. Resubmit the correction.", 409);
+        await checkTallyPreview(db, state, command.expectedTotals);
+        await checkTallyPreview(
+          db,
+          state,
+          command.expectedAfterTotals,
+          !!command.expectedTotals,
+          {
+            categoryId: r.categoryId,
+            body:
+              r.kind === "award"
+                ? (r.body as AwardBody)
+                : (r.body as ResultBody).impact!,
+          },
+        );
       }
-      await publish(db, user, r, state, command.reason);
+      await approveRevision(db, user, r, state, command.reason);
       return { id: r.id };
     }
     case "account.save": {
@@ -507,6 +806,9 @@ export function commandChangesPublicData(command: Command) {
     case "bracket.save":
       // Republishing also changes its public publication timestamp.
       return command.publish;
+    case "result.save":
+    case "award.save":
+      return command.publish === true;
     case "review":
       return command.decision === "approve";
     default:

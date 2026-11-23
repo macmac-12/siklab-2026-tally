@@ -33,6 +33,8 @@ export type Schedule = {
   status: "upcoming" | "ongoing" | "completed" | "postponed" | "cancelled";
   reason: string;
   version: number;
+  /** Changes only when participants, result scope or lifecycle changes. */
+  scoringVersion?: number;
   publishedId: string | null;
 };
 export type Placing = {
@@ -44,6 +46,7 @@ export type ResultBody = {
   scoreA: number | null;
   scoreB: number | null;
   outcome: "normal" | "forfeitA" | "forfeitB" | "double_forfeit";
+  decision?: { kind: "winner"; entryId: string } | { kind: "draw" };
   placings: Placing[];
   note: string;
   ruling: string;
@@ -61,10 +64,23 @@ export type AwardRow = {
   entryId?: string;
 };
 export type AwardBody = {
+  method?: "calculated" | "certified";
+  /** Editor inputs are retained only on unpublished draft history. */
+  draftInputs?: {
+    placings: Placing[];
+    collegePlacings: CollegePlacing[];
+    tieOrder: string[];
+  };
   rows: AwardRow[];
   source: string;
   ruleVersion: number;
   ruling: string;
+};
+export type AwardMethod = NonNullable<AwardBody["method"]>;
+export type CollegePlacing = {
+  collegeId: CollegeId;
+  rank: number | null;
+  eligible: boolean;
 };
 export type Revision = {
   id: string;

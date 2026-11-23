@@ -75,9 +75,11 @@ function AccountForm({
         <label>
           Role
           <select name="role" defaultValue={user?.role || "officer"}>
-            <option value="officer">Game staff · assigned events</option>
+            <option value="officer">
+              Game staff · assigned schedules only
+            </option>
             <option value="admin">
-              Administrator · event operations and review
+              Administrator · results, standings and event operations
             </option>
             <option value="superadmin">
               Superadministrator · accounts and recovery

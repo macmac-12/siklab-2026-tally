@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, GitBranch } from "lucide-react";
 import type { PublicBracket } from "@/lib/public-projections";
 import type { PublicSnapshot } from "@/lib/model";
-import { matchesFilters } from "@/lib/public-projections";
+import { matchOutcomeLabel, matchesFilters } from "@/lib/public-projections";
 import { dateLabel, scheduleTimeLabel } from "../shared/format";
 import CollegeIdentity from "../shared/CollegeIdentity";
 import { displayEntryLabel } from "@/lib/branding";
@@ -157,7 +157,9 @@ export default function BracketView({
                         <div className="match-heading">
                           <strong>{n.label}</strong>
                           <span className="status">
-                            {fixture?.status ||
+                            {(fixture?.status === "completed" && !result
+                              ? "Awaiting result"
+                              : fixture?.status) ||
                               (n.slots.some((s) => s.kind === "bye")
                                 ? "Bye"
                                 : "Future match")}
@@ -185,13 +187,25 @@ export default function BracketView({
                                 );
                               })()}
                             </span>
-                            <strong className="numeric">
-                              {result
-                                ? ((i
-                                    ? result.body.scoreB
-                                    : result.body.scoreA) ?? "—")
-                                : "—"}
-                            </strong>
+                            {result && fixture ? (
+                              <span className="compact-result-side">
+                                <span className="match-outcome">
+                                  {matchOutcomeLabel(
+                                    fixture,
+                                    result.body,
+                                    fixture.entryIds[i],
+                                  )}
+                                </span>
+                                {result.body.scoreA !== null &&
+                                result.body.scoreB !== null ? (
+                                  <strong className="numeric">
+                                    {i
+                                      ? result.body.scoreB
+                                      : result.body.scoreA}
+                                  </strong>
+                                ) : null}
+                              </span>
+                            ) : null}
                           </div>
                         ))}
                         {result && result.body.outcome !== "normal" ? (

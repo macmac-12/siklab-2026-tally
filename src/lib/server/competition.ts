@@ -4,6 +4,7 @@ import { requireAccess, fail, uid, audit } from "./store";
 import {
   aggregateAwards,
   directAwards,
+  directCollegeAwards,
   pointsFor,
   validatePlacings,
 } from "../scoring";
@@ -16,14 +17,36 @@ import type {
   AwardBody,
   User,
   Placing,
+  CollegePlacing,
+  AwardMethod,
 } from "../model";
 export function findCategory(state: Snapshot, id: string) {
   return (
     state.categories.find((c) => c.id === id) || fail("Unknown event category.")
   );
 }
-export function awardSource(state: Snapshot, categoryId: string) {
+export function awardSource(
+  state: Snapshot,
+  categoryId: string,
+  method: AwardMethod = "calculated",
+) {
   const c = findCategory(state, categoryId);
+  if (method === "certified")
+    return hash(
+      JSON.stringify({
+        method,
+        categoryId,
+        ruleVersion: c.version,
+        policy: c.policy,
+        entries:
+          c.policy === "college"
+            ? []
+            : state.entries
+                .filter((e) => e.categoryId === categoryId)
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map((e) => [e.id, e.collegeId]),
+      }),
+    );
   return hash(
     JSON.stringify({
       ruleVersion: c.version,
@@ -33,7 +56,12 @@ export function awardSource(state: Snapshot, categoryId: string) {
       schedules: state.schedules
         .filter((s) => s.categoryId === categoryId)
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map((s) => [s.id, s.version, s.publishedId, s.status]),
+        .map((s) => [
+          s.id,
+          s.scoringVersion ?? s.version,
+          s.publishedId,
+          s.status,
+        ]),
     }),
   );
 }
@@ -83,6 +111,10 @@ export function calculateAward(
       const revision = state.revisions.find((r) => r.id === final!.publishedId);
       if (!revision) fail(`${d.name}: final placings are not approved.`);
       const body = revision!.body as ResultBody;
+      if (!body.placings.length)
+        fail(
+          `${d.name}: completion alone has no sub-points. Enter final placings or use certified championship standings.`,
+        );
       for (const row of body.placings) {
         const e = state.entries.find((e) => e.id === row.entryId)!;
         totals[e.collegeId] =
@@ -109,11 +141,52 @@ export function calculateAward(
     ruling,
   };
 }
+export function calculateCertifiedAward(
+  state: Snapshot,
+  categoryId: string,
+  placings: Placing[],
+  collegePlacings: CollegePlacing[],
+  ruling: string,
+  complete = true,
+): AwardBody {
+  const category = findCategory(state, categoryId);
+  if (!category.confirmed)
+    fail(category.hold || "Confirm the official rule first.");
+  if (category.policy === "college" && placings.length)
+    fail("Use college standings for this category.");
+  if (category.policy !== "college" && collegePlacings.length)
+    fail("Use candidate or entry standings for this category.");
+  const rows =
+    category.policy === "college"
+      ? directCollegeAwards(category, collegePlacings, complete)
+      : directAwards(
+          category,
+          placings,
+          state.entries.filter((e) => e.categoryId === categoryId),
+          complete,
+        );
+  return {
+    method: "certified",
+    rows,
+    source: awardSource(state, categoryId, "certified"),
+    ruleVersion: category.version,
+    ruling,
+  };
+}
 export function validateResult(state: Snapshot, s: Schedule, b: ResultBody) {
   const c = findCategory(state, s.categoryId);
   if (s.status === "cancelled" || s.status === "postponed")
-    fail("Resume this competition before submitting a result.");
+    fail("Resume this competition before publishing a result.");
   if (s.kind === "placing") {
+    if (
+      b.scoreA !== null ||
+      b.scoreB !== null ||
+      b.outcome !== "normal" ||
+      b.decision
+    )
+      fail("Use completion or placings for this competition.");
+    // A completion-only event intentionally awards no placings or points.
+    if (!b.placings.length) return;
     validatePlacings(b.placings, s.entryIds);
     const rule = s.disciplineId
       ? state.disciplines.find((d) => d.id === s.disciplineId)!.rule
@@ -127,35 +200,60 @@ export function validateResult(state: Snapshot, s: Schedule, b: ResultBody) {
         )
     )
       fail("Complete all available podium placings.");
-    if (b.scoreA !== null || b.scoreB !== null || b.outcome !== "normal")
-      fail("Use placings for this competition.");
     return;
   }
-  if (b.placings.length)
-    fail("Match results use scores, not final event placings.");
-  if (b.scoreA === null || b.scoreB === null) fail("Enter both scores.");
-  const a = b.scoreA!,
-    d = b.scoreB!;
+  if (s.entryIds.length !== 2 || b.placings.length)
+    fail("A match result needs two scheduled opponents and no event placings.");
+  if ((b.scoreA === null) !== (b.scoreB === null))
+    fail("Enter both optional scores or leave both blank.");
+  if (b.decision?.kind === "winner" && !s.entryIds.includes(b.decision.entryId))
+    fail("Choose a winner from the scheduled opponents.");
   if (b.outcome === "double_forfeit") {
     if (
       c.event !== "CODM" ||
       s.table !== "codm" ||
-      a !== 0 ||
-      d !== 0 ||
+      b.decision ||
+      (b.scoreA !== null && (b.scoreA !== 0 || b.scoreB !== 0)) ||
       !b.ruling.trim()
     )
       fail(
-        "A double forfeit needs a CODM league match, scores 0–0 and an official ruling.",
+        "A double forfeit needs a CODM league match, optional scores 0–0 and an official ruling.",
       );
     return;
   }
-  if (b.outcome !== "normal" && !b.ruling.trim())
-    fail("Record the official forfeit ruling.");
+  if (b.outcome !== "normal") {
+    if (!b.ruling.trim()) fail("Record the official forfeit ruling.");
+    const winner = s.entryIds[b.outcome === "forfeitA" ? 1 : 0];
+    if (
+      b.decision &&
+      (b.decision.kind !== "winner" || b.decision.entryId !== winner)
+    )
+      fail("The forfeiting side cannot win.");
+  }
+  if (
+    b.decision?.kind === "draw" &&
+    (c.event !== "Chess" || b.outcome !== "normal")
+  )
+    fail("Only a played chess match can end in a draw.");
+  if (b.scoreA === null || b.scoreB === null) {
+    if (b.outcome === "normal" && !b.decision)
+      fail("Choose the winning college or record a chess draw.");
+    return;
+  }
+  const a = b.scoreA,
+    d = b.scoreB;
   if (
     (b.outcome === "forfeitA" && a >= d) ||
     (b.outcome === "forfeitB" && d >= a)
   )
     fail("The forfeiting side cannot win.");
+  if (
+    b.decision?.kind === "winner" &&
+    (a === d || s.entryIds[a > d ? 0 : 1] !== b.decision.entryId)
+  )
+    fail("The optional scores must agree with the winning college.");
+  if (b.decision?.kind === "draw" && a !== d)
+    fail("The optional scores must agree with the draw.");
   if (c.event === "Chess") {
     if (![0, 0.5, 1].includes(a) || ![0, 0.5, 1].includes(d) || a + d !== 1)
       fail("Chess uses 1–0, 0–1 or 0.5–0.5.");
@@ -170,6 +268,21 @@ export function validateResult(state: Snapshot, s: Schedule, b: ResultBody) {
         );
     }
   }
+}
+const SCORING_FIELDS = [
+  "categoryId",
+  "disciplineId",
+  "kind",
+  "isFinal",
+  "entryIds",
+  "table",
+  "bestOf",
+  "stage",
+] as const;
+export function scoringScopeChanged(previous: Schedule, next: Schedule) {
+  return SCORING_FIELDS.some(
+    (key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key]),
+  );
 }
 export function validateSchedule(
   state: Snapshot,
@@ -264,22 +377,7 @@ export function validateSchedule(
           ["pending", "draft"].includes(r.status),
       ))
   ) {
-    if (
-      [
-        "categoryId",
-        "disciplineId",
-        "kind",
-        "isFinal",
-        "entryIds",
-        "table",
-        "bestOf",
-        "stage",
-      ].some(
-        (k) =>
-          JSON.stringify(s[k as keyof Schedule]) !==
-          JSON.stringify(previous[k as keyof Schedule]),
-      )
-    )
+    if (scoringScopeChanged(previous, s))
       fail(
         "Participants, format and scoring scope are locked after a result is saved.",
       );
@@ -288,9 +386,16 @@ export function validateSchedule(
     fail(
       "A published result must stay completed. Submit a reviewed result correction instead.",
     );
-  if (publicAward(state, c.id))
+  const award = publicAward(state, c.id);
+  if (
+    award &&
+    (award.body as AwardBody).method !== "certified" &&
+    (!previous ||
+      scoringScopeChanged(previous, s) ||
+      previous.status !== s.status)
+  )
     fail(
-      "This category already has a published award. Correct results through review; scheduling is locked.",
+      "This category has a calculated award. Its competitions and scoring scope are locked.",
     );
   if (
     s.isFinal &&
@@ -384,10 +489,17 @@ export async function saveSchedule(
     id: previous?.id || uid(),
     version: (previous?.version || 0) + 1,
     publishedId: previous?.publishedId || null,
+    scoringVersion: previous
+      ? (previous.scoringVersion ?? previous.version) +
+        (scoringScopeChanged(previous, input as Schedule) ||
+        previous.status !== input.status
+          ? 1
+          : 0)
+      : 1,
   };
   validateSchedule(state, s, previous);
   await db.query(
-    "INSERT INTO schedules(id,category_id,discipline_id,data,version,published_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET data=$4,version=$5",
+    "INSERT INTO schedules(id,category_id,discipline_id,data,version,published_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET discipline_id=$3,data=$4,version=$5",
     [s.id, s.categoryId, s.disciplineId, s, s.version, s.publishedId],
   );
   await audit(

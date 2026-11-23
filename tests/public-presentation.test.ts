@@ -10,9 +10,12 @@ import {
   chronological,
   collegeSummaries,
   dailyAgenda,
+  matchOutcomeLabel,
+  publicResultSchedules,
   winningCollege,
 } from "../src/lib/public-projections";
 import { scheduleTimeLabel } from "../src/components/shared/format";
+import { projectPublicState } from "../src/lib/server/public";
 
 const entries: Entry[] = [
   { id: "buhi", collegeId: "BUHI", categoryId: "sport", label: "BUHI" },
@@ -143,6 +146,7 @@ test("college result summaries apply filters before choosing the latest three pu
         collegeId: "BUHI",
         total: 1,
         resultIds: ["result-old"],
+        scheduleIds: ["old"],
       },
     );
   assert.equal(
@@ -150,6 +154,123 @@ test("college result summaries apply filters before choosing the latest three pu
       (c) => c.total === 0,
     ),
     true,
+  );
+});
+
+test("scoreless decisions identify both outcomes without treating missing scores as a draw", () => {
+  const s = fixture("scoreless");
+  const scoreless = body({
+    scoreA: null,
+    scoreB: null,
+    decision: { kind: "winner", entryId: "ccs" },
+  });
+  assert.equal(winningCollege(s, scoreless, entries), "CCS");
+  assert.equal(matchOutcomeLabel(s, scoreless, "ccs"), "Won");
+  assert.equal(matchOutcomeLabel(s, scoreless, "buhi"), "Lost");
+  assert.equal(
+    matchOutcomeLabel(s, body({ scoreA: null, scoreB: null }), "buhi"),
+    "Result pending",
+  );
+  assert.equal(
+    matchOutcomeLabel(
+      s,
+      body({ scoreA: null, scoreB: null, decision: { kind: "draw" } }),
+      "buhi",
+    ),
+    "Draw",
+  );
+  assert.equal(
+    matchOutcomeLabel(
+      s,
+      body({ scoreA: null, scoreB: null, outcome: "forfeitA" }),
+      "buhi",
+    ),
+    "Lost by forfeit",
+  );
+});
+
+test("completed fields join public histories once without fabricated result records", () => {
+  const fields = Array.from({ length: 25 }, (_, i) =>
+    fixture(`field-${String(i).padStart(2, "0")}`, {
+      kind: "placing",
+      entryIds: ["buhi", "ccs", "cas"],
+      publishedId: null,
+    }),
+  );
+  const scored = fixture("scored");
+  const state: PublicSnapshot & { brackets: [] } = {
+    categories: [],
+    disciplines: [],
+    entries,
+    schedules: [
+      ...fields,
+      scored,
+      fixture("awaiting", { publishedId: null }),
+      fixture("cancelled", {
+        kind: "placing",
+        status: "cancelled",
+        publishedId: null,
+      }),
+    ],
+    results: [
+      {
+        id: "result-scored",
+        categoryId: "sport",
+        scheduleId: scored.id,
+        body: body(),
+        publishedAt: "2026-11-24T09:00:00Z",
+      },
+    ],
+    awards: [],
+    tallyAdjustments: [],
+    brackets: [],
+    version: 1,
+    updatedAt: "",
+  };
+  const records = publicResultSchedules(state);
+  assert.equal(records.length, 26);
+  assert.equal(new Set(records.map((s) => s.id)).size, 26);
+  assert.equal(records[0].id, "scored");
+  assert(!records.some((s) => ["awaiting", "cancelled"].includes(s.id)));
+  const summary = collegeSummaries(state).find((s) => s.collegeId === "BUHI")!;
+  assert.equal(summary.total, 26);
+  assert.deepEqual(summary.scheduleIds, ["scored", "field-00", "field-01"]);
+  assert.deepEqual(summary.resultIds, ["result-scored"]);
+  const first = projectPublicState(
+    state,
+    new URLSearchParams("view=results&college=BUHI&page=1&limit=100"),
+  );
+  const second = projectPublicState(
+    state,
+    new URLSearchParams("view=results&college=BUHI&page=2"),
+  );
+  assert.equal(first.total, 26);
+  assert.equal(first.limit, 20);
+  assert.equal(first.schedules.length, 20);
+  assert.equal(second.schedules.length, 6);
+  assert.equal(
+    new Set([...first.schedules, ...second.schedules].map((s) => s.id)).size,
+    26,
+  );
+  assert.equal(first.results.length, 1);
+  assert.equal(second.results.length, 0);
+  const banners = projectPublicState(
+    state,
+    new URLSearchParams("view=results"),
+  );
+  assert.equal(banners.schedules.length, 4);
+  assert.equal(banners.results.length, 1);
+  const noMatches = projectPublicState(
+    state,
+    new URLSearchParams("view=results&venue=Missing&page=99"),
+  );
+  assert.equal(noMatches.total, 0);
+  assert.equal(noMatches.page, 1);
+  assert.deepEqual(noMatches.schedules, []);
+  assert.equal(state.results.length, 1);
+  assert.equal(
+    state.schedules.find((s) => s.id === "field-00")?.publishedId,
+    null,
   );
 });
 

@@ -171,7 +171,7 @@ export default function PublicApp({
             <h1>{titles[view]}</h1>
             <p>
               {view === "results"
-                ? "Reviewed results, shared across every participating college."
+                ? "Official results and completed events, shared across every participating college."
                 : view === "standings"
                   ? "Official championship totals, including confirmed tally adjustments."
                   : view === "schedules"
@@ -490,7 +490,7 @@ export default function PublicApp({
                     ))}
                     {!data.schedules.length ? (
                       <StudentEmpty
-                        title="No approved results found"
+                        title="No results or completed events found"
                         text="Try another filter or follow this college’s upcoming competitions."
                         href={`/schedules?college=${college}`}
                       />

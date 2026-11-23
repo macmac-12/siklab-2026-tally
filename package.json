@@ -16,7 +16,7 @@
     "db:cloud:migrate": "node --env-file=.env.cloud.local --import tsx scripts/migrate.ts",
     "setup:cloud": "npm run db:cloud:migrate && node --env-file=.env.cloud.local --import tsx scripts/configure-cloud.ts",
     "deploy:production": "node scripts/deploy-production.mjs",
-    "verify:hosted": "node --env-file=.env.cloud.local scripts/verify-hosted.mjs"
+    "verify:hosted": "node --env-file=.env.cloud.local scripts/verify-hosted-readonly.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

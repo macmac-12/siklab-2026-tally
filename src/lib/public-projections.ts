@@ -1,6 +1,7 @@
 import { COLLEGES } from "./catalog";
 import type { Entry, PublicSnapshot, ResultBody, Schedule } from "./model";
 import type { Bracket, ResolvedNode } from "./brackets";
+import { resolveMatchOutcome } from "./outcomes";
 export type PublicBracket = {
   id: string;
   publishedAt: string;
@@ -15,7 +16,12 @@ export type PublicData = PublicSnapshot & {
   scheduleDates: string[];
   agendaDate: string | null;
   today: string;
-  collegeResults: { collegeId: string; resultIds: string[]; total: number }[];
+  collegeResults: {
+    collegeId: string;
+    resultIds: string[];
+    scheduleIds: string[];
+    total: number;
+  }[];
   brackets: PublicBracket[];
   summaries: Pick<PublicSnapshot, "schedules" | "results">;
 };
@@ -103,31 +109,50 @@ export function collegeSummaries(
   state: PublicSnapshot,
   filters = new URLSearchParams(),
 ) {
-  const matchingIds = new Set(
-    state.schedules
-      .filter((s) => matchesFilters(s, state, filters))
-      .map((s) => s.id),
-  );
-  const results = [...state.results].sort(
-    (a, b) =>
-      b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id),
-  );
+  const schedules = publicResultSchedules(state, filters);
+  const results = new Map(state.results.map((r) => [r.scheduleId, r]));
+  const colleges = new Map(state.entries.map((e) => [e.id, e.collegeId]));
   return COLLEGES.map((c) => {
-    const all = results.filter(
-      (r) =>
-        matchingIds.has(r.scheduleId) &&
-        state.schedules
-          .find((s) => s.id === r.scheduleId)
-          ?.entryIds.some((id) =>
-            state.entries.some((e) => e.id === id && e.collegeId === c.id),
-          ),
+    const all = schedules.filter((s) =>
+      s.entryIds.some((id) => colleges.get(id) === c.id),
     );
+    const latest = all.slice(0, 3);
     return {
       collegeId: c.id,
       total: all.length,
-      resultIds: all.slice(0, 3).map((r) => r.id),
+      scheduleIds: latest.map((s) => s.id),
+      resultIds: latest.flatMap((s) => {
+        const result = results.get(s.id);
+        return result ? [result.id] : [];
+      }),
     };
   });
+}
+
+/** Field events can finish without a per-entry result or a fabricated revision. */
+export function isCompletedFieldEvent(schedule: Schedule) {
+  return schedule.kind === "placing" && schedule.status === "completed";
+}
+
+/** One schedule-keyed list drives result previews, histories and pagination. */
+export function publicResultSchedules(
+  state: PublicSnapshot,
+  filters = new URLSearchParams(),
+): Schedule[] {
+  const results = new Map(state.results.map((r) => [r.scheduleId, r]));
+  const timestamp = (s: Schedule) =>
+    results.get(s.id)?.publishedAt || s.startsAt || `${s.date}T00:00:00+08:00`;
+  return state.schedules
+    .filter(
+      (s) =>
+        matchesFilters(s, state, filters) &&
+        (results.has(s.id) || isCompletedFieldEvent(s)),
+    )
+    .sort(
+      (a, b) =>
+        Date.parse(timestamp(b)) - Date.parse(timestamp(a)) ||
+        a.id.localeCompare(b.id),
+    );
 }
 
 /** Only a published body can determine a winning college; schedule status cannot. */
@@ -142,15 +167,26 @@ export function winningCollege(
     const champions = body.placings.filter((p) => p.eligible && p.rank === 1);
     if (champions.length !== 1) return null;
     entryId = champions[0].entryId;
-  } else if (body.outcome === "forfeitA") entryId = schedule.entryIds[1];
-  else if (body.outcome === "forfeitB") entryId = schedule.entryIds[0];
-  else if (
-    body.scoreA !== null &&
-    body.scoreB !== null &&
-    body.scoreA !== body.scoreB
-  )
-    entryId = schedule.entryIds[body.scoreA > body.scoreB ? 0 : 1];
+  } else
+    entryId = resolveMatchOutcome(schedule, body).winnerEntryId || undefined;
   return entries.find((e) => e.id === entryId)?.collegeId || null;
+}
+
+/** Visible outcome labels never infer a draw from two absent scores. */
+export function matchOutcomeLabel(
+  schedule: Schedule,
+  body: ResultBody,
+  entryId: string,
+): string {
+  const outcome = resolveMatchOutcome(schedule, body);
+  if (outcome.doubleForfeit) return "Lost by forfeit";
+  if (outcome.draw) return "Draw";
+  const byForfeit = body.outcome === "forfeitA" || body.outcome === "forfeitB";
+  if (outcome.winnerEntryId === entryId)
+    return byForfeit ? "Won by forfeit" : "Won";
+  if (outcome.loserEntryId === entryId)
+    return byForfeit ? "Lost by forfeit" : "Lost";
+  return "Result pending";
 }
 export function matchesFilters(
   s: Schedule,

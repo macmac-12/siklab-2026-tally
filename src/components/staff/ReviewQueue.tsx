@@ -14,6 +14,11 @@ import { categoryLabel } from "@/lib/catalog";
 import type { Run } from "./client";
 import CollegeIdentity from "../shared/CollegeIdentity";
 import { displayEntryLabel } from "@/lib/branding";
+import {
+  expectedTally,
+  expectedTallyAfter,
+  TallyImpactPreview,
+} from "./PublicationPreview";
 export function Summary({
   state,
   body,
@@ -55,13 +60,28 @@ export function Summary({
       </div>
     );
   const b = body as ResultBody;
+  const winnerId = b.decision?.kind === "winner" ? b.decision.entryId : null;
+  const winner = state.entries.find((entry) => entry.id === winnerId);
   return (
     <>
+      {b.outcome === "double_forfeit" ? (
+        <p>
+          <strong>Both sides forfeited</strong>
+        </p>
+      ) : b.decision?.kind === "draw" ? (
+        <p>
+          <strong>Draw</strong>
+        </p>
+      ) : winnerId ? (
+        <p>
+          <strong>{winner ? displayEntryLabel(winner) : winnerId} won</strong>
+        </p>
+      ) : null}
       {b.scoreA !== null ? (
         <p className="review-score">
           {b.scoreA} – {b.scoreB} <small>{b.outcome}</small>
         </p>
-      ) : (
+      ) : b.placings.length ? (
         <ul>
           {b.placings.map((p) => (
             <li key={p.entryId}>
@@ -78,7 +98,9 @@ export function Summary({
             </li>
           ))}
         </ul>
-      )}
+      ) : !b.decision && b.outcome === "normal" ? (
+        <p>No winner or placings recorded.</p>
+      ) : null}
       {b.note ? <p>Public note: {b.note}</p> : null}
       {b.ruling ? <p>Ruling: {b.ruling}</p> : null}
       {b.impact ? (
@@ -105,6 +127,10 @@ function ReviewForm({
   const [decision, setDecision] = useState("approve");
   const fixture = state.schedules.find((s) => s.id === revision.scheduleId);
   const before = state.revisions.find((r) => r.id === revision.baseId);
+  const impact =
+    revision.kind === "award"
+      ? (revision.body as AwardBody)
+      : (revision.body as ResultBody).impact;
   return (
     <div className="review-dialog-content">
       {fixture ? (
@@ -138,6 +164,13 @@ function ReviewForm({
       {revision.kind === "award" && (revision.body as AwardBody).ruling ? (
         <p>Official ruling: {(revision.body as AwardBody).ruling}</p>
       ) : null}
+      {decision === "approve" && impact ? (
+        <TallyImpactPreview
+          state={state}
+          categoryId={revision.categoryId}
+          award={impact}
+        />
+      ) : null}
       <StaffForm
         onSubmit={async (event) => {
           event.preventDefault();
@@ -148,6 +181,19 @@ function ReviewForm({
               id: revision.id,
               decision,
               reason: data.get("reason"),
+              ...(decision === "approve" && impact
+                ? {
+                    expectedTotals: expectedTally(state),
+                    expectedAfterTotals: expectedTallyAfter(
+                      state,
+                      revision.categoryId,
+                      impact,
+                    ),
+                    ruleVersion: state.categories.find(
+                      (category) => category.id === revision.categoryId,
+                    )!.version,
+                  }
+                : {}),
             })
           )
             complete();
@@ -202,9 +248,14 @@ function compactSummary(revision: Revision) {
       )
       .join(" · ");
   const body = revision.body as ResultBody;
+  if (body.decision?.kind === "winner") return "College win recorded";
+  if (body.decision?.kind === "draw") return "Draw";
+  if (body.outcome === "double_forfeit") return "Both sides forfeited";
   return body.scoreA !== null
     ? `${body.scoreA} – ${body.scoreB}${body.outcome !== "normal" ? " · Forfeit ruling" : ""}`
-    : `${body.placings.filter((p) => p.rank !== null).length} ranked entries`;
+    : body.placings.length
+      ? `${body.placings.filter((p) => p.rank !== null).length} ranked entries`
+      : "Event completed";
 }
 export default function ReviewQueue({
   state,

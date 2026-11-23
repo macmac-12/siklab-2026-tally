@@ -10,17 +10,32 @@ const config = JSON.parse(
 const duration = Number(process.env.LOAD_SECONDS || 600) * 1000;
 const viewerCount = Number(process.env.LOAD_VIEWERS || 1000);
 const pollMs = Number(process.env.LOAD_POLL_MS || 300000);
-if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname) ||
-    !/^\/siklab_rehearsal_/.test(new URL(config.databaseUrl).pathname))
-  throw new Error("Synthetic load is limited to the isolated local rehearsal. Hosted tests require provider authorization.");
-if (!Number.isInteger(viewerCount) || viewerCount < 1 || viewerCount > 10000 || !Number.isFinite(pollMs) || pollMs < 1000)
+if (
+  !["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname) ||
+  !["127.0.0.1", "localhost", "[::1]"].includes(
+    new URL(config.databaseUrl).hostname,
+  ) ||
+  !/^\/siklab_rehearsal_[0-9]+$/.test(new URL(config.databaseUrl).pathname) ||
+  config.database !== new URL(config.databaseUrl).pathname.slice(1)
+)
+  throw new Error(
+    "Synthetic load is limited to the isolated local rehearsal. Hosted tests require provider authorization.",
+  );
+if (
+  !Number.isFinite(duration) ||
+  duration < 1000 ||
+  duration > 3600000 ||
+  !Number.isInteger(viewerCount) ||
+  viewerCount < 1 ||
+  viewerCount > 10000 ||
+  !Number.isFinite(pollMs) ||
+  pollMs < 1000
+)
   throw new Error("Invalid local load configuration.");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const metrics = { public: [], write: [], private: [] },
   failures = [],
-  acknowledged = [],
-  queue = [];
-let running = true;
+  acknowledged = [];
 async function req(path, { cookie, body, key, kind, headers = {} } = {}) {
   const start = performance.now();
   try {
@@ -65,10 +80,10 @@ for (const u of config.staff) {
     cookie: r.response.headers.get("set-cookie").split(";")[0],
   });
 }
-const reviewerCookie = users[18].cookie;
-const initial = (await req("staff/state", { cookie: reviewerCookie })).data;
+const administratorCookie = users[18].cookie;
+const initial = (await req("staff/state", { cookie: administratorCookie }))
+  .data;
 const scheduleMap = new Map(initial.schedules.map((s) => [s.id, s]));
-const baseline = (await req("public/overview")).data.version;
 const started = Date.now(),
   stopAt = started + duration;
 async function viewer(i) {
@@ -89,92 +104,105 @@ async function staff(user, i) {
   while (Date.now() < stopAt) {
     const s = scheduleMap.get(user.scheduleId),
       key = randomUUID();
-    if (tick % 3 === 0) {
-      const { publishedId, ...schedule } = s;
-      // The student UI fixture deliberately includes weather postponements.
-      // Staff must explicitly resume them before the normal result workload.
-      if (["cancelled", "postponed"].includes(schedule.status))
-        schedule.status = "upcoming";
-      const r = await req("staff/command", {
-        cookie: user.cookie,
-        key,
-        kind: "write",
-        body: {
-          action: "schedule.save",
-          schedule: {
-            ...schedule,
-            title: `Rehearsal ${i + 1} · update ${tick}`,
-          },
-        },
-      });
-      if (r) {
-        acknowledged.push(key);
-        s.version++;
-        s.status = schedule.status;
-        s.title = `Rehearsal ${i + 1} · update ${tick}`;
-        await req("staff/state", {cookie: user.cookie, kind: "private"});
-      }
-    } else if (!queue.some((q) => q.scheduleId === s.id)) {
-      const scoreA = s.categoryId.startsWith("chess") ? 1 : Math.max(2, tick),
-        scoreB = s.categoryId.startsWith("chess") ? 0 : 1;
-      const body = {
-        action: "result.save",
-        scheduleId: s.id,
-        body: {
-          scoreA,
-          scoreB,
-          outcome: "normal",
-          placings: [],
-          note: "Load rehearsal only",
-          ruling: "",
-        },
-        submit: true,
-        replacesId: null,
-        baseId: s.publishedId,
-        reason: s.publishedId
-          ? "Rehearsal correction to verify atomic publication"
-          : "",
-      };
-      const r = await req("staff/command", {
-        cookie: user.cookie,
-        key,
-        kind: "write",
-        body,
-      });
-      if (r) {
-        acknowledged.push(key);
-        queue.push({ id: r.data.id, scheduleId: s.id });
-        await req("staff/state", {cookie: user.cookie, kind: "private"});
-      }
+    const {
+      publishedId: _publication,
+      scoringVersion: _scope,
+      ...schedule
+    } = s;
+    const status = s.publishedId
+      ? "completed"
+      : ["upcoming", "ongoing", "completed"][tick % 3];
+    const title = `Rehearsal ${i + 1} · schedule update ${tick}`;
+    const reason = "Disposable rehearsal schedule update";
+    const r = await req("staff/command", {
+      cookie: user.cookie,
+      key,
+      kind: "write",
+      body: {
+        action: "schedule.save",
+        schedule: { ...schedule, title, status, reason },
+      },
+    });
+    if (r) {
+      acknowledged.push(key);
+      s.version++;
+      Object.assign(s, { title, status, reason });
+      await req("staff/state", { cookie: user.cookie, kind: "private" });
     }
     tick++;
     await sleep(Math.min(10000, Math.max(0, stopAt - Date.now())));
   }
 }
-async function reviewer(user) {
-  while (Date.now() < stopAt || queue.length) {
-    const item = queue.shift();
-    if (item) {
-      const key = randomUUID(),
-        r = await req("staff/command", {
-          cookie: user.cookie,
-          key,
-          kind: "write",
-          body: {
-            action: "review",
-            id: item.id,
-            decision: "approve",
-            reason: "Rehearsal reviewed",
+async function administrator(user, i) {
+  await sleep(i * 300);
+  let tick = 0;
+  while (Date.now() < stopAt) {
+    const s = scheduleMap.get(user.scheduleId);
+    if (["cancelled", "postponed"].includes(s.status)) {
+      const {
+        publishedId: _publication,
+        scoringVersion: _scope,
+        ...schedule
+      } = s;
+      const resumeKey = randomUUID();
+      const resumed = await req("staff/command", {
+        cookie: user.cookie,
+        key: resumeKey,
+        kind: "write",
+        body: {
+          action: "schedule.save",
+          schedule: {
+            ...schedule,
+            status: "upcoming",
+            reason: "Resume disposable load fixture",
           },
-        });
-      if (r) {
-        acknowledged.push(key);
-        const s = scheduleMap.get(item.scheduleId);
-        s.publishedId = item.id;
-        s.status = "completed";
-        await req("staff/state", {cookie: user.cookie, kind: "private"});
-      }
-    } else await sleep(500);
+        },
+      });
+      if (resumed) {
+        acknowledged.push(resumeKey);
+        s.version++;
+        s.status = "upcoming";
+        await req("staff/state", { cookie: user.cookie, kind: "private" });
+      } else break;
+    }
+    const winner = tick % 2;
+    const scored = tick % 3 !== 0;
+    const winnerScore = s.categoryId.startsWith("chess") ? 1 : 3;
+    const loserScore = s.categoryId.startsWith("chess") ? 0 : 1;
+    const key = randomUUID();
+    const r = await req("staff/command", {
+      cookie: user.cookie,
+      key,
+      kind: "write",
+      body: {
+        action: "result.save",
+        scheduleId: s.id,
+        body: {
+          scoreA: scored ? (winner === 0 ? winnerScore : loserScore) : null,
+          scoreB: scored ? (winner === 1 ? winnerScore : loserScore) : null,
+          decision: { kind: "winner", entryId: s.entryIds[winner] },
+          outcome: "normal",
+          placings: [],
+          note: "Disposable local load rehearsal",
+          ruling: "",
+        },
+        submit: true,
+        publish: true,
+        replacesId: null,
+        baseId: s.publishedId,
+        reason: s.publishedId
+          ? "Load rehearsal correction verifies atomic publication"
+          : "",
+      },
+    });
+    if (r) {
+      acknowledged.push(key);
+      s.publishedId = r.data.id;
+      s.status = "completed";
+      await req("staff/state", { cookie: user.cookie, kind: "private" });
+    }
+    tick++;
+    await sleep(Math.min(10000, Math.max(0, stopAt - Date.now())));
   }
 }
 const monitor = new Pool({ connectionString: config.databaseUrl, max: 1 });
@@ -196,12 +224,12 @@ const sampler = setInterval(() => {
     .catch(() => {});
 }, 5000);
 console.log(
-  `Running ${duration / 1000}s local production rehearsal: ${viewerCount} viewers (${pollMs / 1000}s refresh), 18 game heads, 2 reviewers.`,
+  `Running ${duration / 1000}s local production rehearsal: ${viewerCount} viewers (${pollMs / 1000}s refresh), 18 schedule staff, 2 administrators.`,
 );
 const tasks = [
   ...Array.from({ length: viewerCount }, (_, i) => viewer(i)),
   ...users.slice(0, 18).map(staff),
-  ...users.slice(18).map(reviewer),
+  ...users.slice(18).map(administrator),
 ];
 await Promise.all(tasks);
 clearInterval(sampler);
@@ -232,7 +260,9 @@ const report = {
   production: true,
   hosted: false,
   cdn: false,
-  sharedCache: config.publicCacheEmulated ? "Single-process emulation of the deployed shared-cache TTL/invalidation contract" : "Disabled",
+  sharedCache: config.publicCacheEmulated
+    ? "Single-process emulation of the deployed shared-cache TTL/invalidation contract"
+    : "Disabled",
   fixtureSchedules: initial.schedules.length,
   host: {
     cpu: os.cpus()[0]?.model,
@@ -243,8 +273,7 @@ const report = {
   maxServerRssMiB: Math.round(maxServerRssKiB / 1024),
   viewers: viewerCount,
   staff: 20,
-  workload:
-    `${pollMs / 1000}s visible-page viewer refresh; 18 game heads alternate schedule edits and result revisions every 10s; 2 reviewers approve queued results. Every successful write reloads the uncached staff workspace, matching the UI. Logins warmed before timing. Local only; no hosted-capacity claim.`,
+  workload: `${pollMs / 1000}s visible-page viewer refresh; 18 game staff update assigned schedule metadata/status every 10s; 2 administrators directly publish/correct their own fixture outcomes with optional scores. Every successful write reloads the uncached staff workspace, matching the UI. Logins warmed before timing. Local only; no hosted-capacity claim.`,
   summary,
   errorRate: failed / total,
   acknowledgedWrites: acknowledged.length,
@@ -261,7 +290,7 @@ report.pass =
   report.errorRate < 0.01 &&
   report.lostAcknowledgedWrites === 0;
 await writeFile(
-  "docs/evidence/deployment-local-load.json",
+  "output/verification/workflow-load.json",
   JSON.stringify(report, null, 2) + "\n",
 );
 console.log(JSON.stringify(report, null, 2));

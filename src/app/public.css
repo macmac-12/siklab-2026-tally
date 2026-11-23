@@ -1576,18 +1576,6 @@
     color-mix(in srgb, var(--clash-b) 16%, transparent) 100%
   );
 }
-.public-app .game-card--compact[data-colleges="3"] {
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--clash-a) 16%, transparent) 0% 30%,
-    color-mix(in srgb, var(--clash-b) 14%, transparent) 35% 64%,
-    color-mix(in srgb, var(--clash-c) 16%, transparent) 69% 100%
-  );
-}
-.public-app .game-card--compact[data-colleges="4"] {
-  background-image: none;
-  border-top: 3px solid var(--public-accent);
-}
 .public-app .game-card--compact.game-card--winner {
   border-left: 3px solid var(--winner-accent);
   background-image: linear-gradient(
@@ -1595,6 +1583,36 @@
     color-mix(in srgb, var(--winner-accent) 18%, transparent),
     color-mix(in srgb, var(--winner-accent) 7%, transparent)
   );
+}
+.public-app .game-card--compact.game-card--multicollege {
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--college-buhi) 16%, transparent) 0%,
+    color-mix(in srgb, var(--college-cas) 16%, transparent) 16.7%,
+    color-mix(in srgb, var(--college-ccs) 16%, transparent) 33.3%,
+    color-mix(in srgb, var(--college-cea) 16%, transparent) 50%,
+    color-mix(in srgb, var(--college-chs) 16%, transparent) 66.7%,
+    color-mix(in srgb, var(--college-ctde) 16%, transparent) 83.3%,
+    color-mix(in srgb, var(--college-cthbm) 16%, transparent) 100%
+  );
+}
+.compact-result-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.compact-result-side > strong {
+  font-size: 24px;
+  line-height: 1;
+}
+.bracket-participant .compact-result-side > strong {
+  font-size: inherit;
+}
+.match-outcome {
+  font-size: 12px;
+  font-weight: 700;
 }
 .game-card--compact .game-top {
   margin-bottom: 8px;
@@ -1788,7 +1806,9 @@
   }
 }
 @media (forced-colors: active) {
-  .public-app .game-card--compact {
+  .public-app .game-card--compact,
+  .public-app .game-card--compact.game-card--multicollege,
+  .public-app .game-card--compact.game-card--winner {
     background-image: none;
   }
   .public-app .game-card--winner {

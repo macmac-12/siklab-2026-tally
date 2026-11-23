@@ -20,7 +20,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import CollegeIdentity from "../shared/CollegeIdentity";
-import type { Audit, StaffSnapshot, User } from "@/lib/model";
+import type { Audit, AwardBody, StaffSnapshot, User } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import Brand from "../shared/Brand";
 import ThemeToggle from "../shared/ThemeToggle";
@@ -28,7 +28,7 @@ import { dateLabel, scheduleTimeLabel } from "../shared/format";
 import { api } from "./client";
 import ScheduleEditor from "./ScheduleEditor";
 import ResultEditor, { AwardEditor } from "./ResultEditor";
-import ReviewQueue from "./ReviewQueue";
+import ReviewQueue, { Summary } from "./ReviewQueue";
 import EventRevisionHistory from "./EventRevisionHistory";
 import TallyCorrections from "./TallyCorrections";
 import {
@@ -76,9 +76,15 @@ function successLabel(body: unknown) {
     "tally.set": "Official tally corrected.",
   };
   if (command.action === "result.save")
-    return command.submit
-      ? "Result submitted for review."
-      : "Result draft saved.";
+    return command.publish
+      ? "Result published."
+      : command.submit
+        ? "Result submitted for review."
+        : "Result draft saved.";
+  if (command.action === "award.save")
+    return command.publish
+      ? "Championship standings published."
+      : "Championship draft saved.";
   if (command.action === "review")
     return command.decision === "approve"
       ? "Approved and published."
@@ -245,7 +251,32 @@ export default function StaffApp() {
     if (snapshot.resetRequired) setResetUser(snapshot.user);
     else {
       setState(snapshot);
-      setCategory((current) => current || snapshot.categories[0]?.id || "");
+      setCategory((current) =>
+        snapshot.categories.some((item) => item.id === current)
+          ? current
+          : snapshot.categories[0]?.id || "",
+      );
+      setTab((current) => {
+        if (
+          snapshot.user.role === "officer" &&
+          [
+            "awards",
+            "review",
+            "rules",
+            "tally",
+            "accounts",
+            "history",
+            "backup",
+          ].includes(current)
+        )
+          return "events";
+        if (
+          snapshot.user.role !== "superadmin" &&
+          ["accounts", "history", "backup"].includes(current)
+        )
+          return "events";
+        return current;
+      });
     }
   }, []);
   useEffect(() => {
@@ -371,15 +402,24 @@ export default function StaffApp() {
     state?.schedules.filter(
       (schedule) => !category || schedule.categoryId === category,
     ) || [];
+  const publishedAward = state?.revisions.find(
+    (revision) =>
+      revision.categoryId === category &&
+      revision.kind === "award" &&
+      revision.status === "approved",
+  );
+  const calculatedAward =
+    !!publishedAward &&
+    (publishedAward.body as AwardBody).method !== "certified";
   const tabs = [
+    ...(admin ? [["tally", "Manage official tally"]] : []),
     ["events", "My events"],
     ["schedules", "Schedules"],
-    ["awards", "Championships"],
+    ...(admin ? [["awards", "Championships"]] : []),
     ...(admin
       ? [
           ["review", "Review queue"],
           ["rules", "Official rules"],
-          ["tally", "Tally corrections"],
         ]
       : []),
     ...(superadmin
@@ -520,9 +560,23 @@ export default function StaffApp() {
               {tab === "events" ? (
                 <>
                   <p className="muted">
-                    Choose an event to manage its schedule and submit results.
-                    Championship awards are finalized separately.
+                    {admin
+                      ? "Manage the official college tally, publish game results, or set championship standings. Match results and the college tally are independent."
+                      : "Create and update schedules for your assigned events, including their status. Administrators publish results and official college standings."}
                   </p>
+                  {admin ? (
+                    <div className="actions">
+                      <button
+                        className="primary"
+                        onClick={() => setTab("tally")}
+                      >
+                        Manage official tally
+                      </button>
+                      <button onClick={() => setTab("awards")}>
+                        Set championship standings
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="event-grid">
                     {state.categories.map((item) => {
                       const fixtures = state.schedules.filter(
@@ -548,10 +602,10 @@ export default function StaffApp() {
                             {fixtures.length} competitions ·{" "}
                             {
                               fixtures.filter(
-                                (schedule) => schedule.publishedId,
+                                (schedule) => schedule.status === "completed",
                               ).length
                             }{" "}
-                            approved
+                            completed
                           </span>
                           {!item.confirmed ? (
                             <span className="hold-label">
@@ -574,37 +628,53 @@ export default function StaffApp() {
                   <div className="actions staff-toolbar">
                     <button
                       className="primary"
-                      disabled={!category || busy}
+                      disabled={!category || busy || calculatedAward}
                       onClick={() => openEditor({ type: "schedule" })}
                     >
                       + Schedule competition
                     </button>
-                    <button
-                      disabled={!category || busy}
-                      onClick={() => {
-                        setError("");
-                        setBracketEditor(true);
-                      }}
-                    >
-                      Arrange tournament bracket
-                    </button>
-                    <button onClick={() => setTab("awards")}>
-                      Finalize championship
-                    </button>
-                    <EntryEditor
-                      key={category}
-                      state={state}
-                      categoryId={category}
-                      run={run}
-                      busy={busy}
-                      error={error}
-                      onOpen={() => setError("")}
-                    />
+                    {admin ? (
+                      <>
+                        <button
+                          disabled={!category || busy}
+                          onClick={() => {
+                            setError("");
+                            setBracketEditor(true);
+                          }}
+                        >
+                          Arrange tournament bracket
+                        </button>
+                        <button onClick={() => setTab("awards")}>
+                          Set championship standings
+                        </button>
+                        <EntryEditor
+                          key={category}
+                          state={state}
+                          categoryId={category}
+                          run={run}
+                          busy={busy}
+                          error={error}
+                          onOpen={() => setError("")}
+                        />
+                      </>
+                    ) : null}
                   </div>
+                  {publishedAward ? (
+                    <p className="small muted">
+                      {calculatedAward
+                        ? "Calculated championship standings are published. Existing titles, dates, times and venues can still be corrected; participants and event status are locked."
+                        : "Certified championship standings are independent of schedules. You can create schedules and update unfinished events without changing the official tally. Published result participants remain locked."}
+                    </p>
+                  ) : null}
                   <div className="compact-record-list">
                     {schedules.map((schedule) => {
-                      const latest = state.revisions.find(
-                        (revision) => revision.scheduleId === schedule.id,
+                      const latest = state.revisions.find((revision) =>
+                        admin
+                          ? revision.scheduleId === schedule.id
+                          : revision.id === schedule.publishedId,
+                      );
+                      const published = state.revisions.find(
+                        (revision) => revision.id === schedule.publishedId,
                       );
                       return (
                         <article
@@ -640,6 +710,17 @@ export default function StaffApp() {
                                   : ""}
                               </p>
                             ) : null}
+                            {published ? (
+                              <Summary
+                                state={state}
+                                body={published.body}
+                                kind="result"
+                              />
+                            ) : schedule.status === "completed" ? (
+                              <p className="small muted">
+                                Completed · no match result recorded.
+                              </p>
+                            ) : null}
                           </div>
                           <div className="record-actions">
                             <span className={`status ${schedule.status}`}>
@@ -656,28 +737,35 @@ export default function StaffApp() {
                             >
                               Edit schedule
                             </button>
-                            <button
-                              disabled={
-                                busy ||
-                                ["cancelled", "postponed"].includes(
-                                  schedule.status,
-                                ) ||
-                                latest?.status === "pending"
-                              }
-                              onClick={() =>
-                                openEditor({ type: "result", id: schedule.id })
-                              }
-                            >
-                              {schedule.publishedId
-                                ? "Correct result"
-                                : latest?.status === "draft"
-                                  ? "Continue draft"
-                                  : "Enter result"}
-                            </button>
-                            <EventRevisionHistory
-                              state={state}
-                              scheduleId={schedule.id}
-                            />
+                            {admin ? (
+                              <>
+                                <button
+                                  disabled={
+                                    busy ||
+                                    ["cancelled", "postponed"].includes(
+                                      schedule.status,
+                                    ) ||
+                                    latest?.status === "pending"
+                                  }
+                                  onClick={() =>
+                                    openEditor({
+                                      type: "result",
+                                      id: schedule.id,
+                                    })
+                                  }
+                                >
+                                  {schedule.publishedId
+                                    ? "Correct result"
+                                    : latest?.status === "draft"
+                                      ? "Continue draft"
+                                      : "Enter result"}
+                                </button>
+                                <EventRevisionHistory
+                                  state={state}
+                                  scheduleId={schedule.id}
+                                />
+                              </>
+                            ) : null}
                           </div>
                         </article>
                       );
@@ -691,7 +779,7 @@ export default function StaffApp() {
                   ) : null}
                 </div>
               ) : null}
-              {tab === "awards" ? (
+              {tab === "awards" && admin ? (
                 <AwardEditor
                   key={category}
                   state={state}
@@ -782,7 +870,8 @@ export default function StaffApp() {
                   />
                 </StaffDialog>
               ) : null}
-              {editor?.type === "result" &&
+              {admin &&
+              editor?.type === "result" &&
               state.schedules.find((schedule) => schedule.id === editor.id) ? (
                 <StaffDialog
                   title={
@@ -799,18 +888,16 @@ export default function StaffApp() {
                   <ResultEditor
                     key={editor.id}
                     state={state}
-                    schedule={
-                      state.schedules.find(
-                        (schedule) => schedule.id === editor.id,
-                      )!
-                    }
+                    schedule={state.schedules.find(
+                      (schedule) => schedule.id === editor.id,
+                    )!}
                     run={run}
                     close={() => setEditor(null)}
                     busy={busy}
                   />
                 </StaffDialog>
               ) : null}
-              {bracketEditor ? (
+              {bracketEditor && admin ? (
                 <StaffDialog
                   title="Arrange tournament bracket"
                   busy={busy}

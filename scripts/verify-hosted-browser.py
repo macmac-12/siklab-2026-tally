@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 
-EXPECTED_ORIGIN = 'https://siklab-tally-free.vercel.app'
+EXPECTED_ORIGIN = 'https://www.siklab2026.app'
 base = os.environ.get('HOSTED_VERIFY_URL', EXPECTED_ORIGIN).rstrip('/')
 if base != EXPECTED_ORIGIN:
     raise SystemExit('Hosted browser acceptance requires the canonical production origin.')
@@ -51,7 +51,7 @@ try:
     call('open', base, '--config=' + str(config))
     call('snapshot')
     evidence = code('''
-      const expected='https://siklab-tally-free.vercel.app';
+      const expected='https://www.siklab2026.app';
       const errors=[],serverFailures=[],failedRequests=[],layouts=[];
       page.on('pageerror',error=>errors.push(error.message));
       page.on('response',response=>{

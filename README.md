@@ -41,26 +41,26 @@ Do not use `docker compose down -v` unless deliberately deleting the database. R
 
 1. Staff manage only assigned categories; administrators can manage all events.
 2. Create a scheduled competition with its real entries and format.
-3. Save a result draft, then submit it for administrator review.
-4. Approval publishes the result. **A match win gives zero official college points.**
-5. When an event/category is complete, submit its championship standings separately. Their approval adds official points once.
+3. Game staff update assigned schedule statuses, including Completed. Administrators enter winners/draws with optional paired scores and publish directly or save private drafts.
+4. Completed field events appear without fabricated results. Match outcomes and schedule completion do not automatically award college points.
+5. Administrators manage exact college Points/Gold/Silver/Bronze totals and optionally publish certified or calculated championship standings, with before/after tally confirmation. Later awards add to the current totals; replacements do not duplicate an award.
 
-Athletics, Arnis and Taekwondo use reviewed final discipline/division **sub-points**, separately for Men and Women, to determine championship standings. The resulting general points enter the overall tally once per category. Preliminary results and individual bouts never become extra awards.
+The optional calculated route for Athletics, Arnis and Taekwondo uses published final discipline/division **sub-points**, separately for Men and Women, to determine championship standings. The resulting general points enter the overall tally once per category. Preliminary results and individual bouts never become extra awards.
 
 CODM and MLBB championships are separate awards (both wins = 40 points). Dance Sports styles and instrumental categories are also separate. Cheerdance and pageant points remain blocked pending official rule confirmation. See [the rule reference](docs/OFFICIAL_RULES.md) for the full interpretation and unresolved proposal details.
 
-Any administrator can approve a correction. The previous approved result remains public until its replacement is approved. A result correction affecting a published championship replaces both result and award atomically. Historical revisions and reasons are retained.
+Administrators publish corrections directly, retaining the previous result until replacement succeeds. Corrections affecting calculated championship awards replace result and award atomically; certified awards remain unchanged. Historical revisions and reasons are retained. Legacy pending submissions can still be published or rejected.
 
 ## Useful workflows
 
 - **Students:** see the pinned official leaders and full college tally, follow date-grouped competition cards, explore published tournament brackets, browse college result histories, and inspect championship point breakdowns. Filters and round navigation stay in the URL. `/display` is a public projector view.
-- **Game staff:** choose an event, create its schedules, enter results, and revise rejected submissions. Unknown end times are allowed; “follows another competition” supports game succession.
-- **Administrators:** manage all event operations, review submissions, confirm versioned rules and TBA disciplines, and correct official college Points/Gold/Silver/Bronze totals with a reason and immediate-publication confirmation. Event revision history remains available.
+- **Game staff:** create/update schedules and statuses for assigned categories only. Results, entries, brackets and college tally controls require an administrator.
+- **Administrators:** manage all event operations, publish outcomes and certified/calculated awards directly, handle legacy pending submissions, manage entries/brackets, confirm rules and edit official college totals with before/after confirmation. Event revision history remains available.
 - **Superadministrator:** additionally manage accounts, assignments and the full system audit; download private backups and validate/restore them. Restore requires a preview and the current password, saves a pre-restore recovery copy, and revokes every session.
 
 Staff creation and editing use button-triggered modal editors with action-specific toasts. Schedule times are optional: clear either time explicitly, or clear start to remove both times and save a date-only **Time TBA** fixture. Status choices are mutually exclusive. Championship tie ordering and ranked rule points use structured controls instead of comma-separated text.
 
-Manual tally corrections are immutable signed offsets, separate from approved championship awards. Staff enter desired totals and confirm the before/after values; later awards continue adding normally. Backup version 4 preserves these corrections, and older version 2/3 backups remain restorable with an empty correction ledger. Competition reset clears corrections. After corrections have been used, any code rollback must retain correction-aware tally calculation.
+Manual tally corrections are immutable signed offsets, separate from approved championship awards. Administrators enter desired totals and confirm the before/after values; later awards continue adding normally. Backup version 5 preserves explicit outcomes, award provenance, draft inputs, scoring versions and the correction ledger; versions 2–4 remain restorable with appropriate legacy defaults. Competition reset clears corrections. After corrections have been used, any code rollback must retain correction-aware tally calculation.
 
 See [role guides](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), [verification](docs/VERIFICATION.md), and [roadmap](docs/ROADMAP.md).
 
@@ -87,7 +87,7 @@ Database tests create and drop a separate `siklab_test_*` database; they require
 
 The browser rehearsal changes its isolated fixture standings; run it after the load test or restart the rehearsal server to obtain fresh fixtures before benchmarking. The recovery script briefly stops/restarts this project's PostgreSQL container, so run it while no real event work is in progress.
 
-The default load test lasts ten minutes with 500 viewers, 18 game heads and 2 reviewers. It checks response times, errors and persisted acknowledgements. `LOAD_SECONDS` allows a shorter diagnostic run; a short run is not the ten-minute acceptance result.
+The default load test lasts ten minutes with 1,000 viewers, 18 schedule-only game staff and 2 result-publishing administrators. It checks response times, errors and persisted acknowledgements. `LOAD_SECONDS` allows a shorter diagnostic run; a short run is not the ten-minute acceptance result.
 
 The earlier `npm run audit` and `audit:load` scripts document the inherited API and are archival baseline tools, not tests for the redesigned API. They refuse to launch against the new database architecture. Their reports remain unchanged for comparison.
 
@@ -102,3 +102,5 @@ The current appearance verification is recorded in [Dark mode verification](docs
 ## Vercel and Supabase deployment
 
 See [the free-tier deployment guide](docs/DEPLOYMENT.md) for production setup, guarded release, private recovery, quota limits, and event-day checks. Production uses a separate database and credentials; `.env.local` continues to configure local development.
+
+The revised scheduling/results/tally release is covered in [workflow verification](docs/SCHEDULE_WORKFLOW_VERIFICATION.md), including role checks, scoreless outcomes, certified standings, compatibility and local browser/performance evidence.

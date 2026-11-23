@@ -5,6 +5,7 @@ import {
   collegeSummaries,
   chronological,
   matchesFilters,
+  publicResultSchedules,
   type PublicData,
   type PublicBracket,
 } from "../public-projections";
@@ -54,6 +55,7 @@ async function load(): Promise<Complete> {
         scoreA: r.body.scoreA,
         scoreB: r.body.scoreB,
         outcome: r.body.outcome,
+        ...(r.body.decision ? { decision: r.body.decision } : {}),
         placings: r.body.placings,
         note: r.body.note,
         ruling: "",
@@ -72,6 +74,7 @@ async function load(): Promise<Complete> {
         source: "",
         ruleVersion: r.body.ruleVersion,
         ruling: "",
+        ...(r.body.method ? { method: r.body.method } : {}),
       },
       publishedAt: r.reviewed_at.toISOString(),
     }));
@@ -110,7 +113,7 @@ export async function publicStateWithFreshness(params: URLSearchParams) {
   const { data: state, freshUntil } = await readPublicSnapshot(load);
   return { data: projectPublicState(state, params), freshUntil };
 }
-function projectPublicState(
+export function projectPublicState(
   state: Complete,
   params: URLSearchParams,
 ): PublicData {
@@ -128,27 +131,17 @@ function projectPublicState(
     category = params.get("category") || "";
   const agenda = dailyAgenda(state, params.get("college") || "");
   const collegeResults = collegeSummaries(state, params);
-  let matches = chronological(state.schedules).filter(
-    (s) =>
-      matchesFilters(s, state!, params) &&
-      (view !== "results" || !!s.publishedId),
-  );
-  if (view === "results")
-    matches.sort((a, b) => {
-      const published = (id: string) =>
-        state!.results.find((r) => r.scheduleId === id)?.publishedAt || "";
-      return (
-        published(b.id).localeCompare(published(a.id)) ||
-        a.id.localeCompare(b.id)
-      );
-    });
+  const matches =
+    view === "results"
+      ? publicResultSchedules(state, params)
+      : chronological(state.schedules).filter((s) =>
+          matchesFilters(s, state, params),
+        );
   const brackets = state.brackets.filter(
     (b) => b.bracket.categoryId === category,
   );
-  const summaryIds = new Set(collegeResults.flatMap((c) => c.resultIds));
-  const summarySchedules = state.schedules.filter((s) =>
-    state!.results.some((r) => r.scheduleId === s.id && summaryIds.has(r.id)),
-  );
+  const summaryIds = new Set(collegeResults.flatMap((c) => c.scheduleIds));
+  const summarySchedules = matches.filter((s) => summaryIds.has(s.id));
   const effectiveLimit = view === "results" ? 20 : limit;
   const effectivePage = Math.min(
     page,

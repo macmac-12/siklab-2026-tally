@@ -170,6 +170,27 @@ test("corrections preserve confirmed fixtures and flag descendants", () => {
   assert.equal(resolveBracket(b, c)[1].winner, null);
   assert.equal(JSON.stringify(c.schedules), before);
 });
+test("scoreless published winners feed both winner and loser bracket slots", () => {
+  const c = context();
+  c.results = [
+    {
+      scheduleId: "f1",
+      body: {
+        scoreA: null,
+        scoreB: null,
+        outcome: "normal",
+        decision: { kind: "winner", entryId: "b" },
+        placings: [],
+        note: "",
+        ruling: "",
+      },
+    },
+  ];
+  const nodes = resolveBracket(graph(), c);
+  assert.equal(nodes[0].winner, "b");
+  assert.equal(nodes[1].slots[0].entryId, "b");
+  assert.equal(nodes[2].slots[0].entryId, "a");
+});
 const snapshot = (): PublicSnapshot => ({
   tallyAdjustments: [],
   ...context(),

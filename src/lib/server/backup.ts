@@ -12,10 +12,16 @@ import {
   rule,
 } from "./validation";
 import { validateResult } from "./competition";
-import { overall, pointsFor } from "../scoring";
+import {
+  directAwards,
+  directCollegeAwards,
+  overall,
+  pointsFor,
+} from "../scoring";
 import { tallyAdjustments, requireNonnegativeTally } from "./tally";
 import type { User, ResultBody, AwardBody } from "../model";
 import type { PoolClient } from "pg";
+import { isDeepStrictEqual } from "node:util";
 const TABLES = [
   "accounts",
   "categories",
@@ -35,6 +41,25 @@ const text = z.string().max(10000),
 const nonneg = z.number().int().min(0).max(1000000);
 const awardBody = z
   .object({
+    method: z.enum(["calculated", "certified"]).optional(),
+    draftInputs: z
+      .object({
+        placings: z.array(placing).max(100),
+        collegePlacings: z
+          .array(
+            z
+              .object({
+                collegeId: college,
+                rank: z.number().int().min(1).max(7).nullable(),
+                eligible: z.boolean(),
+              })
+              .strict(),
+          )
+          .max(7),
+        tieOrder: z.array(college).max(7),
+      })
+      .strict()
+      .optional(),
     rows: z
       .array(
         z
@@ -165,6 +190,7 @@ const schemas = {
       data: scheduleInput.extend({
         id,
         version: z.number().int().positive(),
+        scoringVersion: z.number().int().positive().optional(),
         publishedId: id.nullable(),
       }),
       version: z.number().int().positive(),
@@ -214,7 +240,7 @@ const schemas = {
 const envelope = z
   .object({
     format: z.literal("siklab-backup"),
-    version: z.union([z.literal(2), z.literal(3), z.literal(4)]),
+    version: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
     createdAt: date,
     checksum: z.string().regex(/^[a-f0-9]{64}$/),
     tables: z
@@ -249,7 +275,7 @@ export async function exportInside(db: PoolClient) {
   const normalized = JSON.parse(JSON.stringify(tables));
   return {
     format: "siklab-backup",
-    version: 4,
+    version: 5,
     createdAt: new Date().toISOString(),
     tables: normalized,
     checksum: hash(JSON.stringify(normalized)),
@@ -303,11 +329,11 @@ export async function restoreBackup(
   if (hash(JSON.stringify(raw.tables)) !== backup.checksum)
     fail("Backup checksum does not match its contents.");
   if (backup.version >= 3 && !backup.tables.brackets)
-    fail("Version 3 and 4 backups must include brackets.");
+    fail("Version 3 and newer backups must include brackets.");
   if (backup.version === 2 && backup.tables.brackets)
     fail("Version 2 backups cannot contain brackets.");
-  if (backup.version === 4 && !backup.tables.tally_adjustments)
-    fail("Version 4 backups must include tally adjustments.");
+  if (backup.version >= 4 && !backup.tables.tally_adjustments)
+    fail("Version 4 and newer backups must include tally adjustments.");
   if (backup.version < 4 && backup.tables.tally_adjustments)
     fail("Legacy backups cannot contain tally adjustments.");
   backup.tables.brackets ||= [];
@@ -457,7 +483,9 @@ export async function restoreBackup(
     for (const schedule of s.schedules) {
       scheduleInput.parse(
         Object.fromEntries(
-          Object.entries(schedule).filter(([k]) => k !== "publishedId"),
+          Object.entries(schedule).filter(
+            ([k]) => !["publishedId", "scoringVersion"].includes(k),
+          ),
         ),
       );
       if (
@@ -501,6 +529,28 @@ export async function restoreBackup(
           fail("Result revision contains invalid entries.");
       } else {
         const body = awardBody.parse(revision.body);
+        if (body.draftInputs) {
+          if (!["draft", "superseded"].includes(revision.status))
+            fail(
+              "Published or submitted awards cannot contain draft editor inputs.",
+            );
+          const inputs = body.draftInputs;
+          if (
+            new Set(inputs.placings.map((p) => p.entryId)).size !==
+              inputs.placings.length ||
+            new Set(inputs.collegePlacings.map((p) => p.collegeId)).size !==
+              inputs.collegePlacings.length ||
+            new Set(inputs.tieOrder).size !== inputs.tieOrder.length ||
+            inputs.placings.some(
+              (p) =>
+                !s.entries.some(
+                  (e) =>
+                    e.id === p.entryId && e.categoryId === revision.categoryId,
+                ),
+            )
+          )
+            fail("Award draft inputs contain duplicate or invalid entries.");
+        }
         for (const row of body.rows)
           if (
             row.entryId &&
@@ -556,6 +606,69 @@ export async function restoreBackup(
       )
         fail("Invalid published award reference.");
       const b = r!.body as AwardBody;
+      if (b.method === "certified") {
+        const collegeRows = b.rows.filter((row) => !row.entryId);
+        if (collegeRows.length && collegeRows.length !== b.rows.length)
+          fail("Certified awards cannot mix college and candidate standings.");
+        if (
+          new Set(b.rows.map((row) => row.entryId || row.collegeId)).size !==
+          b.rows.length
+        )
+          fail("Certified award standings contain duplicates.");
+        const ranked = b.rows.filter((row) => row.rank !== null);
+        if (
+          b.rows.some(
+            (row) =>
+              row.subPoints !== undefined ||
+              (row.rank !== null && !row.eligible),
+          ) ||
+          new Set(ranked.map((row) => row.rank)).size !== ranked.length
+        )
+          fail(
+            "Certified award ranks must belong to eligible entries and cannot be tied.",
+          );
+        if (collegeRows.length && b.ruleVersion === c.version) {
+          const expected = directCollegeAwards(c, collegeRows);
+          if (!isDeepStrictEqual(expected, b.rows))
+            fail(
+              "Certified college award points do not match its official standings.",
+            );
+        } else if (!collegeRows.length && b.ruleVersion === c.version) {
+          const entries = s.entries.filter(
+            (entry) => entry.categoryId === c.id,
+          );
+          if (
+            c.policy === "college" ||
+            ranked.some((row) => row.rank! > entries.length) ||
+            (c.policy === "best_entry" &&
+              (new Set(b.rows.map((row) => row.collegeId)).size !==
+                b.rows.length ||
+                b.rows.length !==
+                  new Set(entries.map((entry) => entry.collegeId)).size))
+          )
+            fail(
+              "Certified candidate award does not match its aggregation policy.",
+            );
+          if (
+            c.policy === "per_entry" &&
+            !isDeepStrictEqual(
+              directAwards(
+                c,
+                b.rows.map((row) => ({
+                  entryId: row.entryId!,
+                  rank: row.rank,
+                  eligible: row.eligible,
+                })),
+                entries,
+              ),
+              b.rows,
+            )
+          )
+            fail(
+              "Certified candidate award points do not match its standings.",
+            );
+        }
+      }
       if (
         b.ruleVersion === c.version &&
         b.rows.some(

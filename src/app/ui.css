@@ -129,9 +129,23 @@
 }
 .staff-app [data-slot="button"][data-variant="default"],
 .staff-app [data-slot="alert-dialog-action"] {
-  background: var(--color-accent);
+  background: var(--color-accent-text);
   color: var(--color-on-primary);
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
+}
+.staff-app
+  [data-slot="button"][data-variant="default"]:is(
+    :hover,
+    :active,
+    :focus-visible
+  ):not(:disabled),
+.staff-app
+  [data-slot="alert-dialog-action"]:is(:hover, :active, :focus-visible):not(
+    :disabled
+  ) {
+  background: var(--color-scoreboard);
+  color: var(--color-on-scoreboard);
+  border-color: var(--color-scoreboard);
 }
 .staff-app [data-slot="button"][data-variant="ghost"] {
   background: transparent;
@@ -196,6 +210,14 @@
 .staff-app [data-slot="checkbox"][data-state="checked"] {
   background: var(--color-accent);
   color: var(--color-on-primary);
+}
+.staff-app
+  [data-slot="checkbox"][data-state="checked"]:is(:hover, :active):not(
+    :disabled
+  ) {
+  background: var(--color-accent);
+  color: var(--color-on-primary);
+  border-color: var(--color-accent);
 }
 .staff-app [data-slot="badge"] {
   background: var(--color-subtle);

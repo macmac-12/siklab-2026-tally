@@ -4,10 +4,19 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { Pool } from "pg";
-import type { User } from "../src/lib/model";
-import { pool, userById, transaction, snapshot } from "../src/lib/server/store";
+import type { AwardBody, User } from "../src/lib/model";
+import {
+  pool,
+  userById,
+  transaction,
+  snapshot,
+  hash,
+} from "../src/lib/server/store";
 import { command } from "../src/lib/server/actions";
-import { exportBackup } from "../src/lib/server/backup";
+import { exportBackup, restoreBackup } from "../src/lib/server/backup";
+import { COLLEGES } from "../src/lib/catalog";
+import { directCollegeAwards, overall } from "../src/lib/scoring";
+import { tallyAdjustments } from "../src/lib/server/tally";
 import {
   createBackupDownload,
   createBackupUpload,
@@ -549,6 +558,123 @@ test("event reset preserves configuration and staff, removes competition history
   );
   assert.ok(
     [...objects.keys()].some((key) => /safety\/.*before-reset/.test(key)),
+  );
+});
+
+test("version 5 backup validates scoreless publications and certified college awards", async () => {
+  const fixture = (await command(
+    admin,
+    {
+      action: "schedule.save",
+      schedule: {
+        categoryId: "basketball-men",
+        disciplineId: null,
+        title: "Scoreless recovery",
+        kind: "match",
+        stage: "Recovery",
+        isFinal: false,
+        table: "none",
+        bestOf: null,
+        entryIds: ["basketball-men-ccs", "basketball-men-cas"],
+        venue: "Recovery court",
+        date: "2026-11-23",
+        startsAt: null,
+        endsAt: null,
+        followsId: null,
+        status: "upcoming",
+        reason: "",
+      },
+    },
+    randomUUID(),
+  )) as { id: string };
+  await command(
+    admin,
+    {
+      action: "result.save",
+      scheduleId: fixture.id,
+      body: {
+        scoreA: null,
+        scoreB: null,
+        outcome: "normal",
+        decision: { kind: "winner", entryId: "basketball-men-ccs" },
+        placings: [],
+        note: "Declared winner",
+        ruling: "",
+      },
+      submit: true,
+      publish: true,
+      replacesId: null,
+      baseId: null,
+      reason: "",
+    },
+    randomUUID(),
+  );
+  const stateBeforeAward = await state();
+  const category = stateBeforeAward.categories.find(
+    (c) => c.id === "athletics-men",
+  )!;
+  const collegePlacings = COLLEGES.map((c, index) => ({
+    collegeId: c.id,
+    rank: index < 3 ? index + 1 : null,
+    eligible: index < 4,
+  }));
+  const currentAwards = stateBeforeAward.revisions
+    .filter((r) => r.kind === "award" && r.status === "approved")
+    .map((r) => r.body as AwardBody);
+  const offsets = await transaction(tallyAdjustments);
+  const preview = (awards: { rows: AwardBody["rows"] }[]) =>
+    overall(awards, offsets).map((r) => ({
+      collegeId: r.id,
+      points: r.points,
+      gold: r.gold,
+      silver: r.silver,
+      bronze: r.bronze,
+    }));
+  await command(
+    admin,
+    {
+      action: "award.save",
+      categoryId: category.id,
+      method: "certified",
+      placings: [],
+      collegePlacings,
+      tieOrder: [],
+      ruling: "Committee certified college standings",
+      baseId: null,
+      reason: "",
+      replacesId: null,
+      publish: true,
+      ruleVersion: category.version,
+      expectedTotals: preview(currentAwards),
+      expectedAfterTotals: preview([
+        ...currentAwards,
+        { rows: directCollegeAwards(category, collegePlacings) },
+      ]),
+    },
+    randomUUID(),
+  );
+  const backup = await exportBackup(admin);
+  assert.equal(backup.version, 5);
+  const restored = await restoreBackup(admin, { backup, preview: true });
+  assert.equal(restored.ok, true);
+  const badWinner = structuredClone(backup);
+  badWinner.tables.revisions.find(
+    (r: { body: { decision?: unknown } }) => r.body.decision,
+  ).body.decision.entryId = "not-scheduled";
+  badWinner.checksum = hash(JSON.stringify(badWinner.tables));
+  await assert.rejects(
+    restoreBackup(admin, { backup: badWinner, preview: true }),
+    /scheduled opponents/,
+  );
+  const duplicateCollege = structuredClone(backup);
+  const rows = duplicateCollege.tables.revisions.find(
+    (r: { body: { method?: string } }) => r.body.method === "certified",
+  ).body.rows;
+  rows[1].collegeId = rows[0].collegeId;
+  duplicateCollege.checksum = hash(JSON.stringify(duplicateCollege.tables));
+  await assert.rejects(
+    restoreBackup(admin, { backup: duplicateCollege, preview: true }),
+    /duplicates/,
   );
 });
 

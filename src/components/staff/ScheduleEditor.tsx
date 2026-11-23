@@ -1,7 +1,7 @@
 "use client";
 import StaffForm from "./StaffForm";
 import { useState } from "react";
-import type { StaffSnapshot, Schedule } from "@/lib/model";
+import type { AwardBody, StaffSnapshot, Schedule } from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import { todayManila } from "../shared/format";
 import type { Run } from "./client";
@@ -54,9 +54,17 @@ export default function ScheduleEditor({
     disciplines = state.disciplines.filter(
       (d) => d.categoryId === category && d.active,
     );
+  const calculatedAward = state.revisions.some(
+    (revision) =>
+      revision.categoryId === category &&
+      revision.kind === "award" &&
+      revision.status === "approved" &&
+      (revision.body as AwardBody).method !== "certified",
+  );
   const locked =
     !!existing &&
     (!!existing.publishedId ||
+      calculatedAward ||
       state.revisions.some(
         (r) =>
           r.scheduleId === existing.id &&
@@ -83,13 +91,19 @@ export default function ScheduleEditor({
                 ? { id: existing.id, version: existing.version }
                 : {}),
               categoryId: category,
-              disciplineId: String(f.get("disciplineId") || "") || null,
+              disciplineId: locked
+                ? existing?.disciplineId
+                : String(f.get("disciplineId") || "") || null,
               title: f.get("title"),
               kind,
               stage: f.get("stage"),
-              isFinal: f.get("isFinal") === "on",
-              table: f.get("table"),
-              bestOf: f.get("bestOf") ? Number(f.get("bestOf")) : null,
+              isFinal: locked ? existing?.isFinal : f.get("isFinal") === "on",
+              table: locked ? existing?.table : f.get("table"),
+              bestOf: locked
+                ? existing?.bestOf
+                : f.get("bestOf")
+                  ? Number(f.get("bestOf"))
+                  : null,
               entryIds: selected,
               venue: f.get("venue"),
               date,
@@ -141,14 +155,14 @@ export default function ScheduleEditor({
             />
           </label>
           <label>
-            Result format
+            Competition format
             <select
               value={kind}
               disabled={locked}
               onChange={(e) => setKind(e.target.value as Schedule["kind"])}
             >
               <option value="match">Match · two sides</option>
-              <option value="placing">Placings · multiple entries</option>
+              <option value="placing">Event · multiple entries</option>
             </select>
           </label>
           <label>
@@ -168,6 +182,7 @@ export default function ScheduleEditor({
                 key={category}
                 name="disciplineId"
                 defaultValue={existing?.disciplineId || ""}
+                disabled={locked}
                 required
                 onChange={() => {}}
               >
@@ -182,7 +197,11 @@ export default function ScheduleEditor({
           ) : null}
           <label>
             Series length
-            <select name="bestOf" defaultValue={existing?.bestOf || ""}>
+            <select
+              name="bestOf"
+              defaultValue={existing?.bestOf || ""}
+              disabled={locked}
+            >
               <option value="">Not a series</option>
               {[1, 3, 5, 7, 9].map((n) => (
                 <option key={n} value={n}>
@@ -193,7 +212,11 @@ export default function ScheduleEditor({
           </label>
           <label>
             Internal league table
-            <select name="table" defaultValue={existing?.table || "none"}>
+            <select
+              name="table"
+              defaultValue={existing?.table || "none"}
+              disabled={locked}
+            >
               <option value="none">None</option>
               {cat?.event === "CODM" ? (
                 <option value="codm">CODM round robin</option>
@@ -209,8 +232,9 @@ export default function ScheduleEditor({
             <Checkbox
               name="isFinal"
               defaultChecked={existing?.isFinal ?? true}
+              disabled={locked}
             />
-            Final discipline standings · contributes sub-points after approval
+            Final discipline standings · for optional calculated awards
           </label>
         ) : null}
         <fieldset>
@@ -381,6 +405,11 @@ export default function ScheduleEditor({
                   <RadioGroupItem
                     value={s}
                     aria-label={s[0].toUpperCase() + s.slice(1)}
+                    disabled={
+                      !!existing &&
+                      ((!!existing.publishedId && s !== "completed") ||
+                        (calculatedAward && s !== existing.status))
+                    }
                   />
                   {s[0].toUpperCase() + s.slice(1)}
                 </label>
@@ -388,6 +417,10 @@ export default function ScheduleEditor({
             )}
           </RadioGroup>
         </fieldset>
+        <p className="small muted">
+          Completed records that the event has finished. Administrators enter
+          optional results and official college standings separately.
+        </p>
         <div className="form-grid">
           <label>
             Public change / cancellation reason

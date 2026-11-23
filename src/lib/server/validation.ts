@@ -1,10 +1,10 @@
 import { bracketSchema } from "../brackets";
 import { z } from "zod";
-import { COLLEGE_IDS } from "../catalog";
+import { COLLEGE_IDS, type CollegeId } from "../catalog";
 const id = z.string().min(1).max(150),
   text = z.string().trim().min(1).max(200);
 const note = z.string().trim().max(2000).default("");
-export const college = z.enum(COLLEGE_IDS as [string, ...string[]]);
+export const college = z.enum(COLLEGE_IDS as [CollegeId, ...CollegeId[]]);
 export const tallyTotals = z
   .object({
     points: z.number().int().min(0).max(1000000),
@@ -21,6 +21,10 @@ const expectedTallyTotals = z
     bronze: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   })
   .strict();
+const expectedCollegeTotals = z
+  .array(expectedTallyTotals.extend({ collegeId: college }))
+  .max(7)
+  .optional();
 export const rule = z
   .object({
     podium: z.array(z.number().int().min(0).max(1000)).min(1).max(10),
@@ -55,6 +59,12 @@ export const resultBody = z
     scoreA: z.number().min(0).max(99999).nullable(),
     scoreB: z.number().min(0).max(99999).nullable(),
     outcome: z.enum(["normal", "forfeitA", "forfeitB", "double_forfeit"]),
+    decision: z
+      .discriminatedUnion("kind", [
+        z.object({ kind: z.literal("winner"), entryId: id }).strict(),
+        z.object({ kind: z.literal("draw") }).strict(),
+      ])
+      .optional(),
     placings: z.array(placing).max(100),
     note,
     ruling: note,
@@ -136,9 +146,41 @@ export const commandSchema = z.discriminatedUnion("action", [
       scheduleId: id,
       body: resultBody,
       submit: z.boolean(),
+      publish: z.boolean().optional(),
+      expectedTotals: expectedCollegeTotals,
+      expectedAfterTotals: expectedCollegeTotals,
+      ruleVersion: z.number().int().positive().optional(),
       replacesId: id.nullable(),
       baseId: id.nullable(),
       reason: note,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("award.save"),
+      categoryId: id,
+      method: z.enum(["calculated", "certified"]),
+      ruleVersion: z.number().int().positive().optional(),
+      placings: z.array(placing).max(100),
+      collegePlacings: z
+        .array(
+          z
+            .object({
+              collegeId: college,
+              rank: z.number().int().min(1).max(7).nullable(),
+              eligible: z.boolean(),
+            })
+            .strict(),
+        )
+        .max(7),
+      tieOrder: z.array(college).max(7),
+      ruling: note,
+      baseId: id.nullable(),
+      reason: note,
+      replacesId: id.nullable(),
+      publish: z.boolean(),
+      expectedTotals: expectedCollegeTotals,
+      expectedAfterTotals: expectedCollegeTotals,
     })
     .strict(),
   z
@@ -157,6 +199,9 @@ export const commandSchema = z.discriminatedUnion("action", [
       action: z.literal("review"),
       id,
       decision: z.enum(["approve", "reject"]),
+      expectedTotals: expectedCollegeTotals,
+      expectedAfterTotals: expectedCollegeTotals,
+      ruleVersion: z.number().int().positive().optional(),
       reason: note,
     })
     .strict(),

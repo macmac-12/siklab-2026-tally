@@ -68,7 +68,7 @@ try:
     login(fixture['staff'][-1])
     check('administrator event controls stay available while system controls are private', '''
       const state=await(await page.request.get('/api/staff/state')).json();if(state.user.role!=='admin')throw Error('Fixture must be an administrator');
-      for(const label of ['Schedules','Championships','Tally corrections','Review queue','Official rules'])await page.locator('.staff-nav').getByRole('button',{name:label,exact:label!=='Review queue'}).waitFor();
+      for(const label of ['Schedules','Championships','Manage official tally','Review queue','Official rules'])await page.locator('.staff-nav').getByRole('button',{name:label,exact:label!=='Review queue'}).waitFor();
       for(const label of ['Accounts','History','Backup & recovery'])if(await page.locator('.staff-nav').getByRole('button',{name:label,exact:true}).count())throw Error('System control leaked: '+label);
       if(state.users.length||state.audit.length)throw Error('Private accounts/system history leaked through staff API');
       if(!state.revisions.length||!state.revisionActors.length)throw Error('Operational result history or author names unavailable');
@@ -113,7 +113,7 @@ try:
     ''')
     tally = check('manual tally presents warning and all four before/after totals before publication', '''
       const before=await totals('BUHI'),after={points:before.points+9,gold:before.gold+1,silver:before.silver+2,bronze:before.bronze+3};
-      await page.getByRole('button',{name:'Tally corrections',exact:true}).click();await page.getByRole('button',{name:'Correct tally for BUHI',exact:true}).click();await page.getByRole('dialog',{name:'Correct official tally',exact:true}).waitFor();
+      await page.getByRole('button',{name:'Manage official tally',exact:true}).click();await page.getByRole('button',{name:'Correct tally for BUHI',exact:true}).click();await page.getByRole('dialog',{name:'Correct official tally',exact:true}).waitFor();
       await fillTotals(after);await page.getByLabel('Correction reason',{exact:true}).fill('Certified browser rehearsal adjustment for all totals');await page.getByRole('button',{name:'Review correction',exact:true}).click();
       await page.getByText('This correction publishes immediately.',{exact:true}).waitFor();if(await page.locator('.tally-preview tbody tr').count()!==4)throw Error('Missing total in confirmation');
       if(JSON.stringify(await totals('BUHI'))!==JSON.stringify(before))throw Error('Totals changed before final confirmation');
@@ -149,12 +149,12 @@ try:
     ''')
     login(fixture['staff'][0])
     check('officers cannot open or invoke official tally corrections', '''
-      if(await page.locator('.staff-nav').getByRole('button',{name:'Tally corrections',exact:true}).count())throw Error('Officer tally control visible');
+      for(const name of ['Manage official tally','Championships','Review queue','Official rules'])if(await page.locator('.staff-nav').getByRole('button',{name,exact:true}).count())throw Error('Officer mutation control visible: '+name);await page.getByRole('button',{name:'Schedules',exact:true}).click();for(const name of ['Arrange tournament bracket','Set championship standings','Add college entry','Enter result','Correct result','Continue draft'])if(await page.getByRole('button',{name,exact:true}).count())throw Error('Officer event mutation visible: '+name);await page.getByRole('button',{name:'+ Schedule competition',exact:true}).waitFor();
       const response=await page.request.post('/api/staff/command',{headers:{Origin:new URL(page.url()).origin,'Idempotency-Key':crypto.randomUUID()},data:{action:'tally.correct',collegeId:'BUHI',expectedTotals:{points:0,gold:0,silver:0,bronze:0},totals:{points:1,gold:0,silver:0,bronze:0},reason:'Forbidden officer rehearsal correction',confirmed:true}});if(response.status()!==403)throw Error('Officer tally mutation accepted');return {hidden:true,serverStatus:403};
     ''')
     login(fixture)
     check('superadministrator retains system controls and uses account and recovery dialogs', '''
-      for(const label of ['Accounts','History','Backup & recovery','Tally corrections'])await page.locator('.staff-nav').getByRole('button',{name:label,exact:true}).waitFor();
+      for(const label of ['Accounts','History','Backup & recovery','Manage official tally'])await page.locator('.staff-nav').getByRole('button',{name:label,exact:true}).waitFor();
       await page.getByRole('button',{name:'Accounts',exact:true}).click();if(await page.getByLabel('Temporary password',{exact:true}).count())throw Error('Account editor scattered on page');
       await page.getByRole('button',{name:'Create account',exact:true}).click();await page.getByRole('dialog',{name:'Create account',exact:true}).waitFor();if(await page.getByLabel('Temporary password',{exact:true}).getAttribute('type')!=='password')throw Error('Account password exposed');await page.getByRole('dialog').getByRole('button',{name:'Close Create account',exact:true}).click();
       await page.getByRole('button',{name:'Backup & recovery',exact:true}).click();if(await page.getByLabel('Backup file',{exact:true}).count())throw Error('Restore form scattered on page');await page.getByRole('button',{name:'Restore backup',exact:true}).click();await page.getByRole('dialog',{name:'Restore a backup',exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Close Restore a backup',exact:true}).click();return {systemControls:true,accountModal:true,restoreModal:true};

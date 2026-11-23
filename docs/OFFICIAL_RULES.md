@@ -6,15 +6,15 @@ Source: `2026-INTRAMURAL-PROPOSAL-FINAL-1.pdf` (49 pages). PDF pages match print
 
 1. Match outcomes determine tournament progress, never official college points.
 2. Athletics/Arnis/Taekwondo final discipline/division results contribute internal sub-points separately for Men and Women (p.13).
-3. Reviewed championship standings award general points once per category (pp.3–4). The public overall tally sums only these published awards.
+3. Published championship standings award general points once per category (pp.3–4). The public overall tally combines these published awards with separately audited administrator-entered adjustments.
 
-| Event group | Champion / first runner-up / second runner-up / participation |
-|---|---|
-| Basketball, Volleyball, Athletics, Arnis, Taekwondo | 25 / 20 / 15 / 5 |
-| Badminton, Sepak Takraw, Table Tennis, Lawn Tennis, Hip-Hop, Folkdance, Contemporary Dance, CODM, MLBB, Radio Drama, Quiz Bowl, Quartet | 20 / 15 / 10 / 5 |
-| Dance Sports, Vocal Duet, Chess | 8 / 6 / 4 / 2 |
-| Literary, solo music and visual arts in the catalog | 5 / 4 / 3 / 1 |
-| Mr. and Ms. Intrams | 8 / 7 / 6 / 5 / 4 / participation 2; aggregation unconfirmed |
+| Event group                                                                                                                             | Champion / first runner-up / second runner-up / participation |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Basketball, Volleyball, Athletics, Arnis, Taekwondo                                                                                     | 25 / 20 / 15 / 5                                              |
+| Badminton, Sepak Takraw, Table Tennis, Lawn Tennis, Hip-Hop, Folkdance, Contemporary Dance, CODM, MLBB, Radio Drama, Quiz Bowl, Quartet | 20 / 15 / 10 / 5                                              |
+| Dance Sports, Vocal Duet, Chess                                                                                                         | 8 / 6 / 4 / 2                                                 |
+| Literary, solo music and visual arts in the catalog                                                                                     | 5 / 4 / 3 / 1                                                 |
+| Mr. and Ms. Intrams                                                                                                                     | 8 / 7 / 6 / 5 / 4 / participation 2; aggregation unconfirmed  |
 
 Athletics individual sub-points are 5/4/3/1; relay sub-points are 10/8/6/2. Arnis and Taekwondo division sub-points are 5/4/3/1. Two eligible athletes from one college can both contribute. No points for unplayed events (p.19). Enter participation eligibility explicitly; absence is not participation. Ambiguous disciplinary eligibility requires an official ruling.
 
@@ -31,4 +31,10 @@ Organizer-confirmed: CODM plus MLBB championships = 40; Dance Sports Latin, Stan
 - Championship ties require an official playoff/ruling (p.13). Overall equal point totals share rank; no invented medal tiebreaker.
 - Program dates and weigh-in times conflict. No published fixtures are generated from the proposal.
 
-Any administrator may approve corrections, including their own. Keep reasons, before/after history and the previous public revision until approval. Rule changes must not silently rewrite existing published awards.
+## Organizer workflow approved 23 November 2026
+
+Game staff manage assigned schedules and statuses only, including Completed. Administrators own results, entries, brackets, official totals and optional championship awards; superadministrators retain all operations. A two-side outcome can declare a winner without scores; any supplied score pair must follow the event rules. Chess draws and official forfeits remain supported. Field events may be completed without placings; completion and match wins do not themselves award college points or medals.
+
+Administrators can publish directly or save a private draft. Existing pending submissions remain reviewable. Certified championship standings bypass detailed schedule-result prerequisites, but preserve confirmed points, participation eligibility and college/per-entry/best-entry policies. Calculated standings retain the detailed sub-point prerequisites. Result corrections preserve certified awards; calculated award impacts publish atomically. Direct college totals are audited offsets, and later awards add normally with a before/after tally confirmation. Equal overall points continue sharing rank without a medal tiebreaker.
+
+Keep reasons, before/after history and the previous public revision until a successful replacement. Rule changes must not silently rewrite existing published awards.

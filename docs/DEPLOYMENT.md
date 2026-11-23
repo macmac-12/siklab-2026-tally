@@ -4,11 +4,21 @@ This release uses Vercel Hobby for Next.js, Supabase Free for PostgreSQL and pri
 
 The deployment branch is `codex/deploy-vercel-supabase`. Never merge or push it to `main`/`master`. Keep the canonical public URL, verified commit and latest verification results in the release handoff; this document describes the procedure and does not assert that a deployment has passed.
 
+## Schedule, result and tally workflow release
+
+The canonical production origin is [www.siklab2026.app](https://www.siklab2026.app), matching the private cloud APP_ORIGIN. Historical generated aliases below are not current acceptance targets. Keep the dedicated deployment branch and existing project link.
+
+This workflow release adds only JSON fields; no database migration, reseed or reset is required. Capture a private pre-release backup and validate it with `node --import tsx scripts/verify-backup-local.ts <private-backup-path>`; this creates/drops a disposable local database. Preserve the prior deployment ID and protected-branch references. Deploy only after local typecheck/tests/build and browser checks pass.
+
+Backups export version 5 and accept versions 2–5. New scoreless decisions and certified awards require compatible application code: after new-format writes, recover with a compatible build or forward fix, not a blind rollback to code that only understands numeric scores. Never restore an old database snapshot over subsequent staff work merely to roll back code.
+
+`npm run verify:hosted` performs GET-only public/privacy/pagination/ETag acceptance against the current origin. `python scripts/verify-hosted-browser.py` performs read-only hosted browser acceptance in both themes. Neither creates fixtures or changes event data. The old `scripts/verify-hosted.mjs` and `verify-hosted-workflows.ts` are historical destructive pre-launch rehearsals with obsolete workflow assumptions; do not use them for this release. Full write/recovery tests belong in the disposable local rehearsal database.
+
 ## Functionality and UI refinement releases
 
 Migration `004_tally_adjustments.sql` adds a private, RLS-protected correction ledger without rewriting existing event records. It configures the restricted runtime grant/policy when the cloud role exists. Capture a private pre-release backup, validate that backup in a disposable local database, and record the existing Vercel deployment before applying the migration explicitly with `npm run db:cloud:migrate`. Verify RLS and runtime/browser-role privileges, then deploy the reviewed, pushed branch through the guarded release command.
 
-Backups now export version 4. Versions 2/3 remain accepted with an empty correction ledger. Restore/reset safeguards remain mandatory; competition reset clears manual corrections. After corrections have been used, a code rollback must use correction-aware tally calculation rather than silently ignoring saved offsets. The additive table should remain in place during code recovery.
+The earlier refinement introduced backup version 4; the current workflow exports version 5. Versions 2/3 remain accepted with an empty correction ledger. Restore/reset safeguards remain mandatory; competition reset clears manual corrections. After corrections have been used, a code rollback must use correction-aware tally calculation rather than silently ignoring saved offsets. The additive table should remain in place during code recovery.
 
 Production may contain active event records. Use the read-only `scripts/verify-hosted-browser.py` acceptance after releases; it validates the catalog and privacy without requiring an empty competition dataset. `HOSTED_EXPECT_EMPTY=1` opts into the initial clean-baseline check. Never run destructive pre-launch rehearsal/finalization scripts against an active event installation. Detailed refinement checks and evidence are recorded in `docs/FUNCTIONAL_UI_VERIFICATION.md`.
 
@@ -67,29 +77,13 @@ Install only runtime environment variables in Vercel. After the first generated 
 
 ## Phase 4: Verify the actual hosted application
 
-`scripts/verify-hosted.mjs` performs sequential functional acceptance. It refuses a dataset containing existing competition records. It is intended for the empty pre-launch installation and changes its data; stop ordinary staff work while it runs.
+After deploying the tested commit, run `npm run verify:hosted` and `python scripts/verify-hosted-browser.py`. These use only GET requests on the canonical production origin and work with active event records. Browser acceptance covers both themes, narrow/desktop layouts, public privacy, refresh labels and the staff sign-in surface. Do not opt into empty-baseline expectations on an active installation.
 
-```bash
-node scripts/verify-hosted.mjs --self-test
-VERIFY_URL=https://your-canonical-domain.vercel.app node --env-file=.env.cloud.local scripts/verify-hosted.mjs
-```
+Inspect runtime/request errors for a recorded observation window and compare the saved application records against the immediate pre-release backup. Authentication sessions and routine authorized user activity are not competition migrations. Retain private backup contents and logs under ignored `output/`; never commit credentials, signed URLs or account hashes.
 
-The runner checks forced password change/session revocation, officer authorization, uncached private responses/errors, public CDN HITs and ETags, filter/pagination separation, private drafts, publication, approved corrections and unchanged championship awards. It also waits 16 seconds to check weak ETag handling after CDN expiry. It transfers a valid backup of approximately 6 MB directly through signed Storage URLs, avoiding Vercel's 4.5 MB function payload limit. It then checks preview rollback, malformed checksum, wrong password, replacement confirmation, stale previews, actual restore and competition reset. Requests are sequential; there is no concurrency generator. A rerun can reuse the private rehearsal password for the same URL/email only while competition records remain empty, and records whether the password gate passed during the prior attempt. The original bootstrap environment remains unchanged for final recovery.
+Mutation acceptance, backup restore/reset, scoreless outcomes, certified/calculated awards, concurrency and role checks run against `scripts/verification-server.ts` and disposable test databases. The historical hosted pre-launch rehearsal and its evidence remain in Git history; its destructive scripts do not implement this revised workflow. Do not run them against production.
 
-Reports contain statuses, counts, timings and cache observations. Cookies, signed URLs, passwords and backup contents are excluded from the report. Private files stay under ignored `output/deployment/`, with mode 600:
-
-- `hosted-verification.json`: exact functional checks and request observations.
-- `hosted-session-private.json`: rehearsal administrator password needed for recovery; never commit or paste it into logs.
-- `rehearsal-large-backup-private.json`: synthetic private backup fixture.
-- `clean-baseline.json`: separately captured original seed/account baseline.
-
-After acceptance, restore the separately saved clean baseline, remove rehearsal maintenance records/temporary objects through the administrative recovery procedure, revoke sessions, and purge public caches. Check that the sole intended superadministrator again requires the original temporary-password change, the catalog counts are correct, and schedules, results, awards and brackets are empty. The runner deliberately leaves a recovery marker in its report; a passing runner alone is not release readiness. If a destructive request times out, inspect saved state before retrying it.
-
-Also verify browser upload progress/cancellation, keyboard confirmations, mobile layout, manual Refresh, five-minute polling, hidden tabs, stale-data notices and reconnection. Capture Vercel/Supabase usage snapshots before and after the rehearsal, including function CPU/memory/invocations, cache reads/writes, database/storage bytes and egress. Provider dashboards can lag; label the observation time and avoid treating absent metrics as zero usage.
-
-Hosted functional acceptance passed against [the canonical deployment](https://siklab-tally-free.vercel.app) on 22 November 2026 at 02:40 Asia/Manila, with runtime commit `a674b35`. The private `output/deployment/hosted-verification.json` records 14/14 checks and 91 sequential requests over 43 seconds. It observed ten CDN hits, a weak-ETag 304 after a 16-second cache expiry, and successful private transfer/preview/restore of a 6,004,369-byte backup while the largest application JSON POST was 514 bytes. Publication and correction reads after acknowledgement took 96 ms and 99 ms; the restored public fixture read took 487 ms. These are individual functional observations, not concurrent-user capacity measurements.
-
-The final run needed no network retries. Earlier attempts identified an invalid rehearsal start-time fixture and one client-side network failure when downloading a signed backup. The fixture was corrected, read-only GETs gained at most two transport attempts, and the available earlier report was archived under `output/deployment/hosted-attempt-*.json`. HTTP failures remain failures; destructive operations are never retried automatically. Final clean-baseline recovery and credential handoff are a separate release step after these checks.
+A previous clean-installation rehearsal passed on 22 November 2026, but those results are historical and are not evidence for this release or concurrent hosted capacity. Keep current release evidence separate.
 
 ## Caching, recovery and capacity limits
 

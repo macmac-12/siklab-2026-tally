@@ -1,13 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CATEGORIES, DISCIPLINES } from "../src/lib/catalog";
+import { CATEGORIES, COLLEGES, DISCIPLINES } from "../src/lib/catalog";
 import {
   aggregateAwards,
   directAwards,
   overall,
   pointsFor,
   validatePlacings,
+  directCollegeAwards,
+  tournamentTable,
 } from "../src/lib/scoring";
+import {
+  awardSource,
+  calculateCertifiedAward,
+  validateResult,
+  validateSchedule,
+} from "../src/lib/server/competition";
+import { resolveMatchOutcome } from "../src/lib/outcomes";
+import type { ResultBody, Schedule, Snapshot } from "../src/lib/model";
 const entry = {
   id: "ccs",
   categoryId: "",
@@ -17,9 +27,11 @@ const entry = {
 const win = [{ entryId: "ccs", rank: 1, eligible: true }];
 test("CODM and MLBB championships contribute 40; no generic E-games award", () => {
   const awards = ["CODM", "MLBB"].map((event) => ({
-    rows: directAwards(CATEGORIES.find((c) => c.event === event)!, win, [
-      entry,
-    ]),
+    rows: directAwards(
+      CATEGORIES.find((c) => c.event === event)!,
+      win,
+      [entry],
+    ),
   }));
   assert.equal(overall(awards).find((r) => r.id === "CCS")!.points, 40);
   assert(!CATEGORIES.some((c) => c.event === "E-Games"));
@@ -226,5 +238,272 @@ test("CODM double forfeit is two losses, not a drawn match", async () => {
         r.against === 2 &&
         r.tied,
     ),
+  );
+});
+
+const domainState = (): Snapshot => ({
+  categories: CATEGORIES,
+  disciplines: DISCIPLINES,
+  entries: [
+    { ...entry, categoryId: "basketball-men" },
+    {
+      ...entry,
+      id: "cas",
+      categoryId: "basketball-men",
+      collegeId: "CAS",
+      label: "CAS",
+    },
+  ],
+  schedules: [],
+  revisions: [],
+  updatedAt: "",
+  version: 1,
+});
+const domainSchedule = (extra: Partial<Schedule> = {}): Schedule => ({
+  id: "game",
+  categoryId: "basketball-men",
+  disciplineId: null,
+  title: "Game",
+  kind: "match",
+  stage: "Final",
+  isFinal: false,
+  table: "none",
+  bestOf: null,
+  entryIds: ["ccs", "cas"],
+  venue: "Court",
+  startsAt: null,
+  endsAt: null,
+  followsId: null,
+  date: "2026-11-23",
+  status: "upcoming",
+  reason: "",
+  version: 1,
+  publishedId: null,
+  ...extra,
+});
+const domainBody = (extra: Partial<ResultBody> = {}): ResultBody => ({
+  scoreA: null,
+  scoreB: null,
+  outcome: "normal",
+  placings: [],
+  note: "",
+  ruling: "",
+  ...extra,
+});
+test("scoreless wins resolve without fictional scores and supplied scores must agree", () => {
+  const s = domainSchedule(),
+    state = domainState();
+  const b = domainBody({ decision: { kind: "winner", entryId: "ccs" } });
+  validateResult(state, s, b);
+  assert.deepEqual(resolveMatchOutcome(s, b), {
+    winnerEntryId: "ccs",
+    loserEntryId: "cas",
+    draw: false,
+    doubleForfeit: false,
+  });
+  assert.throws(() => validateResult(state, s, domainBody()), /winning/);
+  assert.throws(
+    () => validateResult(state, s, { ...b, scoreA: 1 }),
+    /both optional/,
+  );
+  assert.throws(
+    () => validateResult(state, s, { ...b, scoreA: 0, scoreB: 1 }),
+    /agree/,
+  );
+  assert.throws(
+    () =>
+      validateResult(state, s, {
+        ...b,
+        decision: { kind: "winner", entryId: "other" },
+      }),
+    /scheduled/,
+  );
+  assert.equal(resolveMatchOutcome(s, domainBody()).draw, false);
+});
+test("scoreless chess draws and forfeits remain explicit outcomes", () => {
+  const state = domainState(),
+    s = domainSchedule();
+  const draw = domainBody({ decision: { kind: "draw" } });
+  assert.throws(() => validateResult(state, s, draw), /chess/);
+  validateResult(state, { ...s, categoryId: "chess-men" }, draw);
+  assert.equal(resolveMatchOutcome(s, draw).draw, true);
+  const forfeit = domainBody({ outcome: "forfeitA", ruling: "Absent team" });
+  validateResult(state, s, forfeit);
+  assert.equal(resolveMatchOutcome(s, forfeit).winnerEntryId, "cas");
+  assert.throws(
+    () =>
+      validateResult(state, s, {
+        ...forfeit,
+        decision: { kind: "winner", entryId: "ccs" },
+      }),
+    /forfeiting/,
+  );
+});
+test("completed multi-college events need no placings and create no inferred winner", () => {
+  const s = domainSchedule({
+    kind: "placing",
+    entryIds: ["ccs", "cas", "cea"],
+  });
+  validateResult(domainState(), s, domainBody());
+  assert.equal(resolveMatchOutcome(s, domainBody()).winnerEntryId, null);
+  assert.throws(
+    () =>
+      validateResult(
+        domainState(),
+        s,
+        domainBody({ decision: { kind: "winner", entryId: "ccs" } }),
+      ),
+    /completion/,
+  );
+});
+test("scoreless league results count W/L while exposing incomplete metrics and ranking", () => {
+  for (const mode of ["codm", "mlbb"] as const) {
+    const rows = tournamentTable(
+      [
+        {
+          schedule: domainSchedule(),
+          body: domainBody({ decision: { kind: "winner", entryId: "ccs" } }),
+        },
+      ],
+      domainState().entries,
+      mode,
+    );
+    assert.equal(rows.find((r) => r.id === "ccs")!.wins, 1);
+    assert.equal(rows.find((r) => r.id === "cas")!.losses, 1);
+    assert(
+      rows.every(
+        (r) =>
+          r.played === 1 &&
+          r.for === null &&
+          r.against === null &&
+          r.points === null &&
+          !r.rankingComplete,
+      ),
+    );
+  }
+});
+const collegePlacings = () =>
+  COLLEGES.map((college, index) => ({
+    collegeId: college.id,
+    eligible: index < 4,
+    rank: index < 3 ? index + 1 : null,
+  }));
+test("certified Athletics standings bypass discipline prerequisites and preserve official points", () => {
+  const state = domainState();
+  const award = calculateCertifiedAward(
+    state,
+    "athletics-men",
+    [],
+    collegePlacings(),
+    "Certified championship",
+  );
+  assert.equal(award.method, "certified");
+  assert.deepEqual(
+    award.rows.slice(0, 4).map((r) => r.points),
+    [25, 20, 15, 5],
+  );
+  assert(award.rows.every((r) => !r.entryId && r.subPoints === undefined));
+  assert.throws(
+    () =>
+      calculateCertifiedAward(
+        state,
+        "cheerdance-open",
+        [],
+        collegePlacings(),
+        "",
+      ),
+    /official|proposal/i,
+  );
+  assert.throws(
+    () => directCollegeAwards(CATEGORIES[0], collegePlacings().slice(1)),
+    /each scheduled/,
+  );
+  const incomplete = collegePlacings().map((row) => ({ ...row, rank: null }));
+  assert.throws(
+    () => directCollegeAwards(CATEGORIES[0], incomplete),
+    /champion/,
+  );
+  assert.equal(directCollegeAwards(CATEGORIES[0], incomplete, false).length, 7);
+});
+test("certified candidate standings preserve per-entry and best-entry award policies", () => {
+  const original = CATEGORIES.find((c) => c.event === "Mr. and Ms. Intrams")!;
+  const state = domainState();
+  state.entries = [
+    { ...entry, id: "candidate1", categoryId: original.id },
+    { ...entry, id: "candidate2", categoryId: original.id },
+  ];
+  const placings = state.entries.map((e, i) => ({
+    entryId: e.id,
+    rank: i + 1,
+    eligible: true,
+  }));
+  for (const policy of ["per_entry", "best_entry"] as const) {
+    const category = { ...original, confirmed: true, policy };
+    state.categories = [category];
+    const body = calculateCertifiedAward(
+      state,
+      category.id,
+      placings,
+      [],
+      "Official candidates",
+    );
+    assert.equal(body.rows.length, policy === "per_entry" ? 2 : 1);
+    assert.equal(body.rows[0].points, 8);
+    assert.throws(
+      () => directCollegeAwards(category, collegePlacings()),
+      /candidate/,
+    );
+  }
+});
+test("safe schedule metadata preserves calculated source while scoring scope stays protected", () => {
+  const state = domainState(),
+    previous = domainSchedule({ status: "completed" });
+  state.schedules = [previous];
+  const source = awardSource(state, previous.categoryId);
+  const metadata = {
+    ...previous,
+    version: 2,
+    scoringVersion: 1,
+    title: "Updated title",
+  };
+  assert.equal(
+    awardSource({ ...state, schedules: [metadata] }, previous.categoryId),
+    source,
+  );
+  const certifiedSource = awardSource(state, previous.categoryId, "certified");
+  assert.equal(
+    awardSource({ ...state, schedules: [] }, previous.categoryId, "certified"),
+    certifiedSource,
+  );
+  state.revisions = [
+    {
+      id: "award",
+      categoryId: previous.categoryId,
+      scheduleId: null,
+      kind: "award",
+      status: "approved",
+      body: { rows: [], source, ruleVersion: 1, ruling: "" },
+      baseId: null,
+      actorId: "admin",
+      reason: "",
+      reviewNote: "",
+      createdAt: "",
+      reviewedAt: "",
+      reviewerId: "admin",
+    },
+  ];
+  validateSchedule(state, metadata, previous);
+  assert.throws(
+    () =>
+      validateSchedule(
+        state,
+        { ...metadata, stage: "Different stage" },
+        previous,
+      ),
+    /calculated award/,
+  );
+  assert.throws(
+    () => validateSchedule(state, { ...metadata, status: "ongoing" }, previous),
+    /calculated award/,
   );
 });

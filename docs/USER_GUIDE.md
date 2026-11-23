@@ -8,61 +8,59 @@ The pinned leaders strip shows campus-wide official championship points on every
 
 Schedules opens competition cards grouped by date, including head-to-head matches and multi-entry placing events. Filter by college, event, date, venue and status, or use the date/status shortcuts. Selecting an event keeps cards visible; choose **Tournament bracket** to open its published graph, or **Schedule cards** to return. Bracket filters highlight fixtures without removing the tournament path. On phones, choose one round at a time and use each match’s winner/loser links. Future matches show placeholders and “To be announced” logistics. Events without brackets retain the agenda.
 
-Results shows seven college banners, each with its three latest approved results. A shared result appears under every participating college. Expand a row for full placings and public notes; **View all results** opens that college’s history, 20 per page. Tournament tables and discipline sub-points are secondary disclosures using complete data. Match scores and sub-points are separate from championship points.
+Results shows seven college banners, each with its three latest published outcomes or completed field events. A shared result appears under every participating college. Expand a row for full placings and public notes; **View all results** opens that college’s history, 20 per page. Tournament tables and discipline sub-points are secondary disclosures using complete category data; missing score-dependent values are labeled incomplete. Match scores and sub-points are separate from championship points.
 
 The address preserves filters, event, bracket, round and page. All times use Asia/Manila. A failed refresh retains the matching view with a stale warning; an initial failure offers Try again. Changing filters never presents the previous filter’s data as current. “Checked” records a successful refresh, not live scoring.
 
 ## Game staff
 
-Your superadministrator provides `/staff/login` and account credentials. Change a temporary password before continuing. My events lists your assigned categories.
+Your superadministrator provides `/staff/login` and credentials. Change a temporary password before continuing. My events contains only assigned categories.
 
-1. Choose the event and select Schedule competition.
-2. Select a two-side match or a placing competition. Enter the actual participants, stage, specific court, date and time. Use succession when games follow one another. Choose an approved E-games series length explicitly.
-3. For Athletics/Arnis/Taekwondo, select the discipline/division. Only a placing competition marked **Final discipline standings** contributes sub-points. Individual bouts and preliminary races remain ordinary results.
-4. After play, open Enter result. Enter scores or placings, and mark participation eligibility explicitly. Missing/no-show entrants do not automatically receive participation points. Record official forfeits or other rulings.
-5. Save draft if unfinished; Submit for review when ready. Your result is private until approval. A rejection includes the reviewer's reason; revise and resubmit.
-6. After all competitions are resolved, use Championships. Enter certified final standings for direct-award events. Aggregate sports calculate standings from approved final discipline results. All included disciplines need approved finals or an official cancellation.
+1. Open Schedules and choose Schedule competition. Select the participants, competition format, round/stage, venue and Manila date/time. A date without times shows **Time TBA**. Succession links express timing, not bracket advancement.
+2. For Athletics/Arnis/Taekwondo, select the discipline/division. Administrators manage entry labels and bracket structure.
+3. Update Upcoming, Ongoing, Completed, Postponed or Cancelled as needed. Postponement/cancellation needs a public reason; rescheduling needs a reason. Known intervals are checked for venue/team conflicts; unknown durations are not invented.
+4. A completed field/multi-entry event can appear publicly as **Completed** with no winner or score. A completed two-side match shows **Awaiting result** until an administrator publishes its outcome. Neither action changes the official tally.
 
-Athletics can have two entry labels for one college; both individual placings contribute. A relay accepts one team per college. Labels should distinguish entrants without collecting unnecessary personal information. Full athlete registration and eligibility screening remain outside this application.
+Game staff cannot enter results, edit official totals, award championships, manage entries, or edit brackets. Published results lock participants/scoring format and remain completed. Calculated championship awards also lock new competitions and scoring/status changes. Safe title, timing, venue and succession corrections remain available; certified standings stay independent of schedule completion.
 
-When a sub-point tie exists, enter the complete eligible-college order and the official playoff/ruling. The software does not invent the result of a tie. Cheerdance and pageant awards remain disabled until the administrator receives the missing official rules.
+Stale saves are rejected. Failed requests preserve form input; close/reopen to load the latest version and reapply the intended change. Cancel/Escape warns before discarding unsaved work.
 
-Postpone or cancel with a public reason; change times with a rescheduling reason. Known intervals are checked for court/team conflicts. Unknown end times cannot support complete overlap detection. To move/cancel a predecessor, first update its following competitions.
+## Administrators
 
-If another person changes your schedule, your stale save is rejected. Keep your text, close/reopen the editor to load the latest record, and reapply the intended change. A failed request keeps the current form input. Refreshing the workspace does not silently replace the version held by an open schedule/result form.
+Administrators manage all schedules, outcomes, entries, brackets, official rules and tally operations. Accounts, full system history and backup/recovery remain superadministrator-only.
 
-### Arrange a bracket
+### Match outcomes and completed events
 
-In an assigned event’s Schedules workspace, choose **Arrange tournament bracket**. Add named lanes and rounds in connection order, then add matches with two slots: a known entry, winner or loser of an earlier match, explicit bye, or TBD. Link an existing confirmed fixture only when its participants and discipline match. No seeding or fixtures are generated automatically.
+Open **Enter result**, select the winning entry (or a Chess draw), and optionally enter both numeric scores. A supplied score pair must agree with the decision and event rules. Forfeits require the official ruling. **Save draft** keeps unfinished input private; **Publish result** publishes immediately without another approval step. Corrections require a reason and preserve the old publication until replacement succeeds.
 
-Preview uses the student bracket view. **Save draft** leaves the published bracket intact; **Publish bracket** makes the validated graph public. The editor closes after a successful save; reopen to continue. Versions prevent stale overwrites and retries are idempotent. Resolve invalid references, duplicate fixtures or participant mismatches before saving. Removing a referenced match/round is disabled until its dependents are reassigned.
+For field events, use the schedule's Completed status when detailed placings are unnecessary. Optional detailed placings remain available for existing calculated award workflows. Scoreless winners still resolve bracket advancement. E-games league tables count known wins/losses but label score-based metrics and rankings incomplete until exact series scores are supplied.
 
-Approved results and published byes resolve advancement. Draws, double forfeits and unapproved results remain unresolved. Corrections preserve confirmed fixtures and flag inconsistent paths for staff reconfirmation. Confirm subsequent fixture participants manually, then update/publish the bracket as needed.
+### Manage official tally
 
-## Reviewers and administrators
+Choose **Manage official tally**, select a college and edit its desired Points, Gold, Silver and Bronze totals. Supply a reason of at least ten characters, review the before/after values and differences, then confirm publication. A concurrent change rejects stale confirmation. These edits stay separate from championship awards; later event awards add normally. Review each award's complete before/after tally preview to avoid counting an award twice.
 
-Review queue contains private pending results and championship awards. Check event, entries, scores/placements, calculated points, source context and correction reason. Approve publishes the submission. Return for revision requires an explanation.
+### Optional championship awards
 
-Corrections preserve the currently published version until approval. Any administrator may approve one, including its author. If a result affects a published award, the review card includes the new championship points and both changes publish together. Changed source data makes an older award proposal stale; reject it and request a new submission.
+In Championships choose an event and either **Certified standings** or **Calculated standings**. Certified standings accept the committee's final college placings without requiring detailed schedule results. Mark participation eligibility explicitly: absence is not participation. Candidate-based categories use registered candidate entries and the configured per-entry/best-entry policy. Unconfirmed official rules still block awards.
 
-Administrators can manage event operations, reviews, schedules, rules and tally corrections. Only superadministrators can manage accounts, assignments and temporary password resets. Disabling/resetting an account revokes its sessions; changing assignments takes effect on the next request. An account cannot demote or disable itself.
+Calculated standings retain the detailed approved-result requirements, including final discipline sub-points for aggregate sports. Complete their requirements before saving a calculated award. Certified drafts can be incomplete and preserve candidate inputs. Publication shows all seven colleges' before/after totals and replaces any previous category award rather than adding another active copy.
 
-Official rules records the source/reason for changes. Published awards retain their approved historical points until a separate reviewed correction. Confirm relay label normalization and TBA jumping events only after committee approval. Do not use placeholder rules to unlock unconfirmed points.
+Result corrections preserve certified awards. Corrections affecting calculated awards preview and publish the replacement award atomically. If a calculated award can no longer be supported by detailed results, replace it with certified standings explicitly. Rule changes never silently rewrite historical published awards.
 
-Event revision history remains available to administrators. The History tab is superadministrator-only and shows recent system actions with stable actor identities, reasons and before/after data. Full history remains in the database and backup.
+### Brackets, review and history
 
-In **Tally corrections**, choose a college and **Correct tally**. Enter the desired Points, Gold, Silver and Bronze totals and a reason of at least ten characters. **Review correction** shows the before/after values and differences. **Confirm and publish correction** changes the public tally immediately. A concurrent change rejects stale confirmation. The system preserves championship awards separately, and future approved awards continue adding normally. Make another correction to reverse an earlier manual change. If an award correction would make any total negative, reconcile the manual correction first.
+Administrators arrange named lanes/rounds with entry, winner/loser, bye or TBD slots. Link fixtures only when participants and discipline agree. Save draft retains the current public graph; Publish bracket validates and publishes it. There is no automatic seeding. Published outcomes and explicit byes resolve advancement; draws, double forfeits and unpublished results remain unresolved. Corrections flag inconsistent confirmed paths for administrator reconfirmation.
 
-Staff lists use action buttons to open modal editors. Cancel/Escape warns before discarding unsaved changes; failed saves keep the entered values. Action toasts acknowledge success or failure, and actionable errors remain in the dialog. The compact review queue has ten submissions per page; open **Review** to compare and approve/return a submission. Championship tie ordering uses Move up/down controls, and rules use one points input for each rank.
+The review queue retains existing pending submissions. Publish or return them with a reason; no legacy submission is automatically published by this release. New result/award editors publish directly. Before/after tally confirmation also applies when a legacy submission affects an award. Event revision history stays available to administrators, while full account/system history remains superadministrator-only.
 
-Schedule start/end times have explicit Clear buttons. Clearing start clears both times; saving without either creates a date-only **Time TBA** fixture. The date remains required. Choose one schedule status using its radio option. Fixed-time and succession validation still applies.
+All editors use shared modal controls, dirty-close protection, action toasts and persistent errors. Schedule Clear buttons allow date-only Time TBA fixtures. All dates use Asia/Manila.
 
 ## Backup operator
 
 Only the superadministrator can export/restore private backups. Backups include password hashes and internal history; store them privately. They omit sessions and login-attempt records.
 
-Download Backup regularly. To restore, select a version-2, version-3 or version-4 backup, validate it, inspect record counts in the recovery dialog, enter your current password and confirm replacement. The server saves a private pre-restore safety copy (Supabase Storage when hosted, local backup directory when developing), validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
+Download Backup regularly. To restore, select a version-2 through version-5 backup, validate it, inspect record counts in the recovery dialog, enter your current password and confirm replacement. The server saves a private pre-restore safety copy (Supabase Storage when hosted, local backup directory when developing), validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
 
 Keep the PostgreSQL volume and independent copies of backups. A successful backup download alone is not proof of recoverability; rehearse restoration into a separate local database.
 
-Backup version 4 includes bracket drafts/publications and the manual tally correction ledger. Version-2/3 restores are accepted with no manual corrections; version 2 also has no brackets. Restoration replaces the entire saved dataset after the existing preview/password checks. Competition reset clears manual corrections as well as schedules, results, awards and brackets, retaining account/configuration history.
+Backup version 5 also preserves explicit scoreless outcomes, certified award provenance, award draft inputs and scoring versions, alongside brackets and the manual tally ledger. Version-4 restores remain supported. Version-2/3 restores are accepted with no manual corrections; version 2 also has no brackets. Restoration replaces the entire saved dataset after the existing preview/password checks. Competition reset clears manual corrections as well as schedules, results, awards and brackets, retaining account/configuration history.

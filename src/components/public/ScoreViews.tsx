@@ -5,7 +5,11 @@ import CollegeIdentity, { CollegeCrest } from "../shared/CollegeIdentity";
 import { collegeBrand, displayCode, displayEntryLabel } from "@/lib/branding";
 import { COLLEGES, categoryLabel } from "@/lib/catalog";
 import { overall, tournamentTable, pointsFor } from "@/lib/scoring";
-import { winningCollege } from "@/lib/public-projections";
+import {
+  isCompletedFieldEvent,
+  matchOutcomeLabel,
+  winningCollege,
+} from "@/lib/public-projections";
 import type { PublicData } from "./usePublicData";
 import type { Schedule, ResultBody } from "@/lib/model";
 import { scheduleTimeLabel } from "../shared/format";
@@ -253,13 +257,20 @@ export function ResultContent({
                 ) : (
                   <span>{id}</span>
                 )}
-                <strong className="numeric">
-                  {(i === 0 ? body.scoreA : body.scoreB) ?? "—"}
-                </strong>
+                <span className="match-outcome">
+                  {matchOutcomeLabel(schedule, body, id)}
+                </span>
+                {body.scoreA !== null && body.scoreB !== null ? (
+                  <strong className="numeric">
+                    {i === 0 ? body.scoreA : body.scoreB}
+                  </strong>
+                ) : null}
               </div>
             );
           })}
         </div>
+      ) : body.placings.length === 0 ? (
+        <p className="result-note">Completed</p>
       ) : (
         <ol className="placings">
           {[...body.placings]
@@ -322,17 +333,20 @@ export function ScheduleCard({
   const cardStyle = {
     "--clash-a": colors[0] || "var(--public-border)",
     "--clash-b": colors[1] || colors[0] || "var(--public-border)",
-    "--clash-c": colors[2] || colors[1] || colors[0] || "var(--public-border)",
     "--winner-accent": winner
       ? `var(${collegeBrand(winner)?.accentToken})`
       : "var(--public-border)",
   } as CSSProperties;
   const status =
-    s.status === "completed" && !result ? "Awaiting result" : s.status;
+    s.status === "completed" && !result
+      ? isCompletedFieldEvent(s)
+        ? "Completed"
+        : "Awaiting result"
+      : s.status;
   return (
     <article
-      className={`game-card game-card--compact ${s.kind === "match" ? "match-card" : "placing-card"} ${winner ? "game-card--winner" : ""}`}
-      data-colleges={Math.min(colleges.length, 4)}
+      className={`game-card game-card--compact ${s.kind === "match" ? "match-card" : "placing-card"} ${winner ? "game-card--winner" : ""} ${colleges.length > 2 ? "game-card--multicollege" : ""}`}
+      data-colleges={colleges.length}
       style={cardStyle}
     >
       <div className="game-top">
@@ -350,7 +364,7 @@ export function ScheduleCard({
           ) : (
             <Medal size={14} aria-hidden="true" />
           )}
-          {s.kind === "match" ? "Match" : "Placings"}
+          {s.kind === "match" ? "Match" : "Field event"}
         </span>
       </div>
       {s.kind === "match" ? (
@@ -361,12 +375,19 @@ export function ScheduleCard({
               key={e.id}
             >
               <CollegeIdentity id={e.collegeId} label={displayEntryLabel(e)} />
-              <strong className="numeric">
-                {result && showResult
-                  ? ((index === 0 ? result.body.scoreA : result.body.scoreB) ??
-                    "—")
-                  : "—"}
-              </strong>
+              {result && showResult ? (
+                <span className="compact-result-side">
+                  <span className="match-outcome">
+                    {matchOutcomeLabel(s, result.body, e.id)}
+                  </span>
+                  {result.body.scoreA !== null &&
+                  result.body.scoreB !== null ? (
+                    <strong className="numeric">
+                      {index === 0 ? result.body.scoreA : result.body.scoreB}
+                    </strong>
+                  ) : null}
+                </span>
+              ) : null}
             </div>
           ))}
         </div>
@@ -497,7 +518,7 @@ export function AwardBreakdown({
       ) : (
         <Empty
           title="Championship awards will appear here"
-          text="The official tally updates after final standings are reviewed and approved."
+          text="Administrators publish official championship standings or update the college tally."
         />
       )}
       {adjustments.length ? (
@@ -592,6 +613,12 @@ export function LeagueTables({ data }: { data: PublicData }) {
                   {categoryLabel(data.categories.find((c) => c.id === cid)!)} ·{" "}
                   {stage}
                 </h2>
+                {rows.some((row) => !row.rankingComplete) ? (
+                  <p className="small muted">
+                    Incomplete scores · wins and losses are recorded; map totals
+                    and tournament order remain provisional.
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="table-scroll">
@@ -610,7 +637,7 @@ export function LeagueTables({ data }: { data: PublicData }) {
                     <tr key={r.id}>
                       <th>
                         {r.label}
-                        {r.tied ? (
+                        {r.tied && r.rankingComplete ? (
                           <small className="college-name">
                             Tie requires official ruling
                           </small>
@@ -619,9 +646,17 @@ export function LeagueTables({ data }: { data: PublicData }) {
                       <td>{r.wins}</td>
                       <td>{r.losses}</td>
                       <td>
-                        {r.for}–{r.against}
+                        {r.for !== null && r.against !== null
+                          ? `${r.for}–${r.against}`
+                          : "Incomplete"}
                       </td>
-                      <td>{mode === "mlbb" ? r.points : r.for - r.against}</td>
+                      <td>
+                        {mode === "mlbb"
+                          ? (r.points ?? "Incomplete")
+                          : r.for !== null && r.against !== null
+                            ? r.for - r.against
+                            : "Incomplete"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -689,8 +724,9 @@ export function SubpointTables({ data }: { data: PublicData }) {
                 </span>
                 <h2>{categoryLabel(c)}</h2>
                 <p className="muted small">
-                  From {finals} approved final discipline result(s). Final
-                  championship standings require separate approval.
+                  From {finals} published final discipline result(s).
+                  Administrators publish official championship standings
+                  separately.
                 </p>
               </div>
             </div>

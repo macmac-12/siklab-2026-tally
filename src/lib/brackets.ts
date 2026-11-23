@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Entry, Schedule, ResultBody } from "./model";
+import { resolveMatchOutcome } from "./outcomes";
 const id = z.string().min(1).max(150);
 export const slotSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("entry"), entryId: id }).strict(),
@@ -117,22 +118,9 @@ export function resolveBracket(
       body &&
       body.outcome !== "double_forfeit"
     ) {
-      const a =
-        body.outcome === "forfeitB" ||
-        (body.outcome === "normal" &&
-          body.scoreA !== null &&
-          body.scoreB !== null &&
-          body.scoreA > body.scoreB);
-      const b =
-        body.outcome === "forfeitA" ||
-        (body.outcome === "normal" &&
-          body.scoreA !== null &&
-          body.scoreB !== null &&
-          body.scoreB > body.scoreA);
-      if (a || b) {
-        winner = fixture.entryIds[a ? 0 : 1];
-        loser = fixture.entryIds[a ? 1 : 0];
-      }
+      const outcome = resolveMatchOutcome(fixture, body);
+      winner = outcome.winnerEntryId;
+      loser = outcome.loserEntryId;
     } else if (
       !fixture &&
       !needsConfirmation &&

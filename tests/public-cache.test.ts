@@ -269,7 +269,7 @@ test("cache namespace isolates projects, databases, environments and format vers
     DATABASE_URL: "postgres://postgres.ref:secret@pooler.test:6543/postgres",
   };
   const namespace = publicCacheNamespace(env);
-  assert.match(namespace, /^siklab-public-v2-/);
+  assert.match(namespace, /^siklab-public-v3-/);
   assert(!namespace.includes("secret"));
   assert.notEqual(
     namespace,
@@ -374,6 +374,10 @@ test("only public changes invalidate shared data; unpublished work and accounts 
   assert.equal(decision({ action: "review", decision: "reject" }), false);
   assert.equal(decision({ action: "bracket.save", publish: true }), true);
   assert.equal(decision({ action: "bracket.save", publish: false }), false);
+  for (const action of ["result.save", "award.save"]) {
+    assert.equal(decision({ action, publish: true }), true, action);
+    assert.equal(decision({ action, publish: false }), false, action);
+  }
   for (const action of ["result.save", "award.submit", "account.save"])
     assert.equal(decision({ action }), false, action);
 });

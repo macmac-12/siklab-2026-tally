@@ -89,8 +89,8 @@ function CorrectionEditor({
           }}
         >
           <p className="muted">
-            Enter the corrected official totals. Championship awards remain
-            recorded, and future approved awards will continue adding to these
+            Enter the official college totals. Championship awards remain
+            recorded, and future published awards will continue adding to these
             totals.
           </p>
           <div className="form-grid">
@@ -246,9 +246,10 @@ export default function TallyCorrections({
     <section className="panel compact">
       <div className="section-head">
         <div>
-          <h2>Official tally corrections</h2>
+          <h2>Official college tally</h2>
           <p className="muted">
-            Correct college totals with an official reason. Each change is
+            Set each college’s total points and medal counts with an official
+            reason. Each change publishes after your confirmation and is
             recorded separately from championship awards.
           </p>
         </div>
