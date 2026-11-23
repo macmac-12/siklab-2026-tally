@@ -87,10 +87,9 @@ npx --yes vercel@66.6.0 deploy --prod --yes --scope execuus-projects
 
 ```bash
 npx --yes vercel@66.6.0 inspect https://siklab2026.vercel.app --scope execuus-projects
-python scripts/verify-hosted-browser.py
 ```
 
-Confirm the canonical alias points to the new deployment and its status is **Ready**. The browser runner requires `npx` and Chromium; it checks real production pages without signing in or changing event data. Also open the public site and staff sign-in page and check the changed feature. Record the commit from `git rev-parse HEAD` and the deployment ID/URL from the CLI output.
+Confirm the canonical alias points to the new deployment and its status is **Ready**. Also open the public site and staff sign-in page and check the changed feature. Record the commit from `git rev-parse HEAD` and the deployment ID/URL from the CLI output.
 
 For Analytics, the root layout includes `<Analytics />` from `@vercel/analytics/next`. Check the production page loads `/_vercel/insights/script.js`, then check the project's Web Analytics dashboard for incoming visits. Dashboard enablement, browser blockers, and reporting delay can affect what appears there; successful deployment alone does not prove dashboard data has arrived.
 
