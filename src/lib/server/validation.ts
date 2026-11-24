@@ -214,10 +214,20 @@ export const commandSchema = z.discriminatedUnion("action", [
         .email()
         .max(200)
         .transform((s) => s.toLowerCase()),
-      role: z.enum(["superadmin", "admin", "officer"]),
+      role: z.enum(["superadmin", "admin", "officer", "public_relations"]),
       active: z.boolean(),
       assignments: z.array(id).max(100),
       password: z.string().min(12).max(72).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("discipline.create"),
+      categoryId: id,
+      name: text,
+      rule,
+      scheduleMode: z.enum(["race", "standard"]),
+      reason: z.string().trim().min(10).max(2000),
     })
     .strict(),
   z
@@ -238,6 +248,25 @@ export const commandSchema = z.discriminatedUnion("action", [
       version: z.number().int().positive(),
       active: z.boolean(),
       reason: z.string().trim().min(10).max(2000),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("result.delete"),
+      scheduleId: id,
+      version: z.number().int().positive(),
+      publishedId: id.nullable(),
+      reason: z.string().trim().min(10).max(2000),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("schedule.delete"),
+      id,
+      version: z.number().int().positive(),
+      reason: z.string().trim().min(10).max(2000),
+      confirmed: z.literal(true),
     })
     .strict(),
 ]);

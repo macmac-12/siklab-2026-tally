@@ -17,7 +17,7 @@ The address preserves filters, event, bracket, round and page. All times use Asi
 Your superadministrator provides `/staff/login` and credentials. Change a temporary password before continuing. My events contains only assigned categories.
 
 1. Open Schedules and choose Schedule competition. Select the participants, competition format, round/stage, venue and Manila date/time. A date without times shows **Time TBA**. Succession links express timing, not bracket advancement.
-2. For Athletics/Arnis/Taekwondo, select the discipline/division. Administrators manage entry labels and bracket structure.
+2. For Athletics/Arnis/Taekwondo, select the discipline/division. Athletics track races from 100m through 3000m and both relays also require **Time trial** or **Final race**. Only the final race contributes to calculated Athletics standings. Administrators manage entry labels and bracket structure.
 3. Update Upcoming, Ongoing, Completed, Postponed or Cancelled as needed. Postponement/cancellation needs a public reason; rescheduling needs a reason. Known intervals are checked for venue/team conflicts; unknown durations are not invented.
 4. A completed field/multi-entry event can appear publicly as **Completed** with no winner or score. A completed two-side match shows **Awaiting result** until an administrator publishes its outcome. Neither action changes the official tally.
 
@@ -55,12 +55,22 @@ The review queue retains existing pending submissions. Publish or return them wi
 
 All editors use shared modal controls, dirty-close protection, action toasts and persistent errors. Schedule Clear buttons allow date-only Time TBA fixtures. All dates use Asia/Manila.
 
+## Public Relations
+
+Public Relations accounts can sign in to a read-only staff workspace and change their own password. **Schedules** shows every schedule status; **Published results** and **Published standings** show only current public publications. The role cannot create, edit, review, publish or delete anything, and cannot see drafts, rejected revisions, account administration, audit reasons, official-rule controls or recovery tools.
+
+## Superadministrator additions
+
+Under Official Rules, **Add discipline** creates one inactive discipline for the selected aggregate category. Enter its structured podium/participation points, choose race or standard scheduling, and record the official reason; activate it through the normal audited rule confirmation before scheduling.
+
+Schedule cards expose guarded delete controls only to superadministrators. **Delete result** withdraws the current publication and active draft/pending work while retaining revision and audit history; it is unavailable while a calculated championship depends on that result. **Delete schedule** is permanent and is available only when the schedule has no result history, bracket link or successor. Both actions require an official reason and explicit in-app confirmation.
+
 ## Backup operator
 
 Only the superadministrator can export/restore private backups. Backups include password hashes and internal history; store them privately. They omit sessions and login-attempt records.
 
-Download Backup regularly. To restore, select a version-2 through version-5 backup, validate it, inspect record counts in the recovery dialog, enter your current password and confirm replacement. The server saves a private pre-restore safety copy (Supabase Storage when hosted, local backup directory when developing), validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
+Download Backup regularly. To restore, select a version-2 through version-6 backup, validate it, inspect record counts in the recovery dialog, enter your current password and confirm replacement. The server saves a private pre-restore safety copy (Supabase Storage when hosted, local backup directory when developing), validates relationships and points, replaces records atomically, and signs everyone out. A failed preview/restore does not partially overwrite the dataset.
 
 Keep the PostgreSQL volume and independent copies of backups. A successful backup download alone is not proof of recoverability; rehearse restoration into a separate local database.
 
-Backup version 5 also preserves explicit scoreless outcomes, certified award provenance, award draft inputs and scoring versions, alongside brackets and the manual tally ledger. Version-4 restores remain supported. Version-2/3 restores are accepted with no manual corrections; version 2 also has no brackets. Restoration replaces the entire saved dataset after the existing preview/password checks. Competition reset clears manual corrections as well as schedules, results, awards and brackets, retaining account/configuration history.
+Backup version 6 also preserves account access scopes and discipline scheduling modes alongside explicit scoreless outcomes, certified award provenance, award draft inputs, scoring versions, brackets and the manual tally ledger. Version-2 through version-5 restores remain supported with standard account scopes and normalized discipline modes. Version-2/3 restores have no manual corrections; version 2 also has no brackets. Restoration replaces the entire saved dataset after the existing preview/password checks. Competition reset clears manual corrections as well as schedules, results, awards and brackets, retaining account/configuration history.

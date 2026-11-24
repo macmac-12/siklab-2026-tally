@@ -549,7 +549,7 @@ test("inactive disciplines and unconfirmed awards blocked; legitimate second ath
   await assert.rejects(
     () =>
       schedule("athletics-men", {
-        disciplineId: "athletics-men-4x100m-relay",
+        disciplineId: "athletics-men-long-jump",
         kind: "placing",
         isFinal: true,
       }),
@@ -597,12 +597,35 @@ test("Athletics aggregate, all disciplines resolved and double entrant contribut
   const ds = snap.disciplines.filter(
     (d) => d.categoryId === categoryId && d.active,
   );
+  const trial = await schedule(categoryId, {
+    kind: "placing",
+    disciplineId: ds[0].id,
+    stage: "Time trial",
+    isFinal: false,
+    entryIds: [first, cas],
+    startsAt: "2026-11-23T02:00:00Z",
+    endsAt: null,
+  });
+  const trialResult = await submit(trial, {
+    scoreA: null,
+    scoreB: null,
+    outcome: "normal",
+    placings: [
+      { entryId: cas, rank: 1, eligible: true },
+      { entryId: first, rank: 2, eligible: true },
+    ],
+    note: "",
+    ruling: "",
+  });
+  await approve(trialResult.id);
   for (let i = 0; i < ds.length; i++) {
+    const relay = ds[i].name.includes("Relay");
     const s = await schedule(categoryId, {
       kind: "placing",
       disciplineId: ds[i].id,
+      stage: "Final race",
       isFinal: true,
-      entryIds: [first, second, cas],
+      entryIds: relay ? [first, cas] : [first, second, cas],
       status: i ? "cancelled" : "upcoming",
       reason: i ? "Equipment unavailable; cancellation authorized." : "",
       startsAt: `2026-11-23T${String(i + 3).padStart(2, "0")}:00:00Z`,
@@ -743,7 +766,7 @@ test("bracket permissions, publication, stale saves, idempotency and backup v2/v
   assert.equal(resolved.brackets[0].resolved[1].winner, fixture.entryIds[0]);
   assert.equal(JSON.stringify(resolved.awards), awardsBefore);
   const backup = await exportBackup(admin);
-  assert.equal(backup.version, 5);
+  assert.equal(backup.version, 6);
   assert.equal(backup.tables.brackets.length, 1);
   await restoreBackup(admin, { backup, preview: true });
   const legacy = structuredClone(backup);
@@ -870,7 +893,7 @@ test("disabled staff loses access and rule history persists", async () => {
 test("backup preview rolls back; invalid reference and negative points rejected; restore exact data", async () => {
   const backup = await exportBackup(admin);
   const before = await state();
-  assert.equal(backup.version, 5);
+  assert.equal(backup.version, 6);
   assert(backup.tables.tally_adjustments.length > 0);
   const preview = await restoreBackup(admin, { backup, preview: true });
   assert.equal(preview.preview, true);

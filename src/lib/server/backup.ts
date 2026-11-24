@@ -20,6 +20,7 @@ import {
 } from "../scoring";
 import { tallyAdjustments, requireNonnegativeTally } from "./tally";
 import type { User, ResultBody, AwardBody } from "../model";
+import { DISCIPLINES } from "../catalog";
 import type { PoolClient } from "pg";
 import { isDeepStrictEqual } from "node:util";
 const TABLES = [
@@ -126,6 +127,9 @@ const schemas = {
       name: text,
       email: z.email(),
       role: z.enum(["superadmin", "admin", "officer"]),
+      access_scope: z
+        .enum(["standard", "public_relations"])
+        .optional(),
       password_hash: z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/),
       active: z.boolean(),
       must_reset: z.boolean(),
@@ -165,6 +169,7 @@ const schemas = {
           categoryId: id,
           name: text,
           rule,
+          scheduleMode: z.enum(["race", "standard"]).optional(),
           active: z.boolean(),
           reason: text,
           version: z.number().int().positive(),
@@ -240,7 +245,13 @@ const schemas = {
 const envelope = z
   .object({
     format: z.literal("siklab-backup"),
-    version: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+    version: z.union([
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+      z.literal(6),
+    ]),
     createdAt: date,
     checksum: z.string().regex(/^[a-f0-9]{64}$/),
     tables: z
@@ -275,7 +286,7 @@ export async function exportInside(db: PoolClient) {
   const normalized = JSON.parse(JSON.stringify(tables));
   return {
     format: "siklab-backup",
-    version: 5,
+    version: 6,
     createdAt: new Date().toISOString(),
     tables: normalized,
     checksum: hash(JSON.stringify(normalized)),
@@ -336,6 +347,46 @@ export async function restoreBackup(
     fail("Version 4 and newer backups must include tally adjustments.");
   if (backup.version < 4 && backup.tables.tally_adjustments)
     fail("Legacy backups cannot contain tally adjustments.");
+  if (
+    backup.version >= 6 &&
+    backup.tables.accounts.some(
+      (account: unknown) =>
+        (account as { access_scope?: string }).access_scope === undefined,
+    )
+  )
+    fail("Version 6 backups must include account access scopes.");
+  if (
+    backup.version >= 6 &&
+    backup.tables.disciplines.some(
+      (discipline: unknown) =>
+        (discipline as { data: { scheduleMode?: string } }).data.scheduleMode ===
+        undefined,
+    )
+  )
+    fail("Version 6 backups must include discipline scheduling modes.");
+  if (backup.version < 6) {
+    backup.tables.accounts = backup.tables.accounts.map((account: unknown) => ({
+      ...(account as Record<string, unknown>),
+      access_scope: "standard",
+    }));
+    backup.tables.disciplines = backup.tables.disciplines.map(
+      (row: unknown) => {
+        const discipline = row as {
+          id: string;
+          data: Record<string, unknown>;
+        };
+        return {
+          ...discipline,
+          data: {
+            ...discipline.data,
+            scheduleMode:
+              DISCIPLINES.find((item) => item.id === discipline.id)
+                ?.scheduleMode || "standard",
+          },
+        };
+      },
+    );
+  }
   backup.tables.brackets ||= [];
   backup.tables.tally_adjustments ||= [];
   const counts = Object.fromEntries(

@@ -46,6 +46,10 @@ export default function ScheduleEditor({
       existing?.categoryId || categoryId || state.categories[0]?.id || "",
     ),
     [kind, setKind] = useState(existing?.kind || "match"),
+    [disciplineId, setDisciplineId] = useState(existing?.disciplineId || ""),
+    [racePhase, setRacePhase] = useState<"time_trial" | "final">(
+      existing?.isFinal ? "final" : "time_trial",
+    ),
     [selected, setSelected] = useState(existing?.entryIds || []),
     [succession, setSuccession] = useState(!!existing?.followsId),
     [date, setDate] = useState(existing?.date || todayManila());
@@ -53,7 +57,10 @@ export default function ScheduleEditor({
     entries = state.entries.filter((e) => e.categoryId === category),
     disciplines = state.disciplines.filter(
       (d) => d.categoryId === category && d.active,
-    );
+    ),
+    selectedDiscipline = disciplines.find((d) => d.id === disciplineId),
+    isRace =
+      kind === "placing" && selectedDiscipline?.scheduleMode === "race";
   const calculatedAward = state.revisions.some(
     (revision) =>
       revision.categoryId === category &&
@@ -93,11 +100,21 @@ export default function ScheduleEditor({
               categoryId: category,
               disciplineId: locked
                 ? existing?.disciplineId
-                : String(f.get("disciplineId") || "") || null,
+                : disciplineId || null,
               title: f.get("title"),
               kind,
-              stage: f.get("stage"),
-              isFinal: locked ? existing?.isFinal : f.get("isFinal") === "on",
+              stage: locked
+                ? existing?.stage
+                : isRace
+                  ? racePhase === "final"
+                    ? "Final race"
+                    : "Time trial"
+                  : f.get("stage"),
+              isFinal: locked
+                ? existing?.isFinal
+                : isRace
+                  ? racePhase === "final"
+                  : f.get("isFinal") === "on",
               table: locked ? existing?.table : f.get("table"),
               bestOf: locked
                 ? existing?.bestOf
@@ -135,6 +152,7 @@ export default function ScheduleEditor({
               onChange={(e) => {
                 setCategory(e.target.value);
                 setSelected([]);
+                setDisciplineId("");
               }}
             >
               {state.categories.map((c) => (
@@ -165,26 +183,41 @@ export default function ScheduleEditor({
               <option value="placing">Event · multiple entries</option>
             </select>
           </label>
-          <label>
-            Round / stage
-            <input
-              name="stage"
-              required
-              defaultValue={existing?.stage || "Finals"}
-              maxLength={200}
-              readOnly={locked}
-            />
-          </label>
+          {isRace ? (
+            <label>
+              Race phase
+              <select
+                value={racePhase}
+                disabled={locked}
+                onChange={(event) =>
+                  setRacePhase(event.target.value as "time_trial" | "final")
+                }
+              >
+                <option value="time_trial">Time trial</option>
+                <option value="final">Final race</option>
+              </select>
+            </label>
+          ) : (
+            <label>
+              Round / stage
+              <input
+                name="stage"
+                required
+                defaultValue={existing?.stage || "Finals"}
+                maxLength={200}
+                readOnly={locked}
+              />
+            </label>
+          )}
           {cat?.aggregation === "subpoints" ? (
             <label>
               Discipline / division
               <select
-                key={category}
                 name="disciplineId"
-                defaultValue={existing?.disciplineId || ""}
+                value={disciplineId}
                 disabled={locked}
                 required
-                onChange={() => {}}
+                onChange={(event) => setDisciplineId(event.target.value)}
               >
                 <option value="">Select a discipline</option>
                 {disciplines.map((d) => (
@@ -227,7 +260,9 @@ export default function ScheduleEditor({
             </select>
           </label>
         </div>
-        {kind === "placing" && cat?.aggregation === "subpoints" ? (
+        {kind === "placing" &&
+        cat?.aggregation === "subpoints" &&
+        !isRace ? (
           <label className="check">
             <Checkbox
               name="isFinal"

@@ -9,7 +9,7 @@ Verified on 23 November 2026 using disposable local PostgreSQL databases and the
 - Completed field events appear in college histories without fake revisions or tally contributions. Empty historical placing bodies also display Completed. More than two distinct colleges use all seven canonical accent colors.
 - Exact college totals retain audit, confirmation, stale-value and retry protection. Certified standings work independently of schedules and preserve candidate policies; calculated standings retain detailed-result requirements. Replacement removes the old contribution, and later awards add to the current totals.
 - Certified standings permit continued scheduling. Calculated awards and saved results protect scoring scope while permitting safe logistics corrections. Legacy source fingerprints survive metadata edits. Championship drafts produce a recoverable conflict instead of colliding with calculated-result corrections.
-- Backup v5 preserves decisions, provenance, complete draft inputs, scoring versions and tally offsets. Versions 2–4 remain supported. A private production v4 backup passed validation in a separate local database with its contents unchanged.
+- Backup v6 preserves account scopes and discipline modes in addition to decisions, provenance, complete draft inputs, scoring versions and tally offsets. Versions 2–5 remain supported with legacy defaults. A private production v4 backup passed validation in a separate local database with its contents unchanged.
 
 ## Checks
 

@@ -505,7 +505,7 @@ await check("private backup restricted", async () => {
     assert.equal(typeof b.data.url, "string");
     const exported = await (await fetch(b.data.url)).json();
     assert(!("sessions" in exported.tables));
-    assert.equal(exported.version, 5);
+    assert.equal(exported.version, 6);
   }
 });
 await writeFile(

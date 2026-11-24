@@ -42,6 +42,7 @@ export type Discipline = {
   categoryId: string;
   name: string;
   rule: PointsRule;
+  scheduleMode: "race" | "standard";
   active: boolean;
   reason: string;
   version: number;
@@ -134,6 +135,16 @@ add(
   "Await official candidate-to-college aggregation policy.",
 );
 export const DISCIPLINES: Discipline[] = [];
+const ATHLETICS_RACES = new Set([
+  "100m Dash",
+  "200m Dash",
+  "400m Run",
+  "800m Run",
+  "1500m Run",
+  "3000m Run",
+  "4x100m Relay",
+  "4x400m Relay",
+]);
 for (const category of CATEGORIES.filter(
   (c) => c.aggregation === "subpoints",
 )) {
@@ -148,6 +159,7 @@ for (const category of CATEGORIES.filter(
       "3000m Run",
       "Shot Put",
       "Discus",
+      "Javelin",
       "4x100m Relay",
       "4x400m Relay",
       "Long Jump",
@@ -171,12 +183,18 @@ for (const category of CATEGORIES.filter(
       categoryId: category.id,
       name,
       rule: relay ? { podium: [10, 8, 6], participation: 2 } : small,
-      active: !relay && !tba,
-      reason: relay
-        ? "Confirm normalized relay label: proposal prints 400m x100m / 400m x400m."
-        : tba
+      scheduleMode:
+        category.event === "Athletics" && ATHLETICS_RACES.has(name)
+          ? "race"
+          : "standard",
+      active: !tba,
+      reason: tba
           ? "TBA; confirm equipment and official inclusion (pp.13, 18–19)."
-          : "",
+          : relay
+            ? "Organizer confirmed the normalized relay discipline."
+            : name === "Javelin"
+              ? "Organizer confirmed Javelin as an Athletics discipline."
+              : "",
       version: 1,
     });
   }

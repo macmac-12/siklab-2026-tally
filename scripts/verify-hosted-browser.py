@@ -95,7 +95,7 @@ try:
       if(!api.ok())throw Error(`Public API returned ${api.status()}`);
       const data=await api.json();
       const requireEmpty=''' + json.dumps(os.environ.get('HOSTED_EXPECT_EMPTY') == '1') + ''';
-      const expectedCounts={categories:49,disciplines:48,entries:343,...(requireEmpty?{schedules:0,results:0,awards:0,brackets:0}:{})};
+      const expectedCounts={categories:49,disciplines:50,entries:343,...(requireEmpty?{schedules:0,results:0,awards:0,brackets:0}:{})};
       const counts=Object.fromEntries(Object.keys(expectedCounts).map(key=>[key,data[key]?.length]));
       if(Object.keys(expectedCounts).some(key=>counts[key]!==expectedCounts[key]))throw Error(`Unexpected public catalog or requested baseline: ${JSON.stringify(counts)}`);
       if(['users','accounts','audit','sessions','assignments','revisionActors'].some(key=>Object.hasOwn(data,key)))throw Error('Private data exposed in public API');

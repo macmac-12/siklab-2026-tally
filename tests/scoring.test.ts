@@ -144,11 +144,8 @@ test("catalog uses offered categories and exact weight labels", () => {
   assert.equal(CATEGORIES.filter((c) => c.event === "Sepak Takraw").length, 1);
   assert(DISCIPLINES.some((d) => d.id === "taekwondo-men-63kg"));
   assert(!DISCIPLINES.some((d) => /Poomsae|Anyo|5000|Hurdle/.test(d.name)));
-  assert(
-    DISCIPLINES.filter((d) => /Relay|Jump/.test(d.name)).every(
-      (d) => !d.active,
-    ),
-  );
+  assert(DISCIPLINES.filter((d) => /Jump/.test(d.name)).every((d) => !d.active));
+  assert(DISCIPLINES.filter((d) => /Relay/.test(d.name)).every((d) => d.active));
 });
 
 test("complete podium required before official points are awarded", () => {

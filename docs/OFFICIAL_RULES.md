@@ -24,7 +24,7 @@ Organizer-confirmed: CODM plus MLBB championships = 40; Dance Sports Latin, Stan
 
 - Cheerdance is offered (pp.28–29) but absent from the general-points table: block general awards until a rule is entered with an official source.
 - Pageant allows two male and two female candidates per college (p.32). Aggregation is not specified; general awards stay blocked until policy is confirmed. Results can still be approved and published.
-- Athletics relay labels on p.13 appear as “400m x100m” and “400m x400m”. Proposed normalized labels 4x100m/4x400m remain inactive until confirmed. Long Jump (p.13) and Triple Jump (p.18) are TBA and inactive.
+- Long Jump (p.13) and Triple Jump (p.18) are TBA and inactive.
 - Taekwondo specific rules say single elimination whereas the general sports section says double elimination. Staff enter committee-approved fixtures; no automatic bracket generation.
 - MLBB group descriptions and playoff formats conflict (pp.33–34). Staff select explicit stages/series lengths. For declared BO3 league stages, 2–0 yields 3/0 internal league points; 2–1 yields 2/1. These never enter the college tally.
 - CODM approved round-robin results use wins, map difference, maps won, then head-to-head / tied mini-table (pp.39–40). Any remaining tie needs the prescribed official ruling. Double forfeits record two losses and 0–2 maps each (p.37).
@@ -38,3 +38,11 @@ Game staff manage assigned schedules and statuses only, including Completed. Adm
 Administrators can publish directly or save a private draft. Existing pending submissions remain reviewable. Certified championship standings bypass detailed schedule-result prerequisites, but preserve confirmed points, participation eligibility and college/per-entry/best-entry policies. Calculated standings retain the detailed sub-point prerequisites. Result corrections preserve certified awards; calculated award impacts publish atomically. Direct college totals are audited offsets, and later awards add normally with a before/after tally confirmation. Equal overall points continue sharing rank without a medal tiebreaker.
 
 Keep reasons, before/after history and the previous public revision until a successful replacement. Rule changes must not silently rewrite existing published awards.
+
+## Organizer workflow approved 24 November 2026
+
+Javelin is confirmed for Athletics Men and Women with the individual 5/4/3 podium and 1 participation sub-point rule. The proposal's ambiguous relay labels are normalized and confirmed as 4x100m Relay and 4x400m Relay for both categories, retaining the relay 10/8/6/2 rule.
+
+The 100m, 200m, 400m, 800m, 1500m and 3000m races and both relays identify schedules as either **Time trial** (not a scoring final) or **Final race** (the discipline result used by calculated Athletics standings). Field events keep the standard final control. Future disciplines are created inactive by a superadministrator with a structured points rule, scheduling mode and official reason, then use the existing confirmation workflow before scheduling.
+
+Public Relations accounts have read-only access to all schedule statuses and currently published results/standings. Only superadministrators can withdraw a current result or permanently delete a dependency-free schedule. Result withdrawal retains immutable revision/audit history; schedules with any result history, bracket link or successor cannot be deleted.

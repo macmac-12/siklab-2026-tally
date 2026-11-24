@@ -83,20 +83,37 @@ export async function userById(
   id: string,
 ): Promise<User | null> {
   const { rows } = await db.query(
-    'SELECT a.id,a.name,a.email,a.role,a.active,a.must_reset AS "mustReset",COALESCE(array_agg(s.category_id) FILTER (WHERE s.category_id IS NOT NULL), ARRAY[]::text[]) AS assignments FROM accounts a LEFT JOIN assignments s ON a.id=s.account_id WHERE a.id=$1 GROUP BY a.id',
+    `SELECT a.id,a.name,a.email,
+      CASE WHEN a.access_scope='public_relations' THEN 'public_relations' ELSE a.role END AS role,
+      a.active,a.must_reset AS "mustReset",
+      COALESCE(array_agg(s.category_id) FILTER (WHERE s.category_id IS NOT NULL), ARRAY[]::text[]) AS assignments
+     FROM accounts a LEFT JOIN assignments s ON a.id=s.account_id
+     WHERE a.id=$1 GROUP BY a.id`,
     [id],
   );
   return rows[0] || null;
 }
 export function canAccess(user: User, categoryId: string) {
-  return user.role !== "officer" || user.assignments.includes(categoryId);
+  return user.role === "public_relations" ||
+    user.role === "admin" ||
+    user.role === "superadmin" ||
+    user.assignments.includes(categoryId);
 }
 export function requireAccess(user: User, categoryId: string) {
   if (!canAccess(user, categoryId))
     fail("This event is not assigned to your account.", 403);
 }
 export function requireAdmin(user: User) {
-  if (user.role === "officer") fail("Administrator access required.", 403);
+  if (user.role !== "admin" && user.role !== "superadmin")
+    fail("Administrator access required.", 403);
+}
+export function requireSuperadmin(user: User) {
+  if (user.role !== "superadmin")
+    fail("Only the superadministrator can perform this action.", 403);
+}
+export function requireScheduleManager(user: User) {
+  if (user.role === "public_relations")
+    fail("Public Relations accounts have read-only access.", 403);
 }
 export function scheduleRow(r: Record<string, unknown>): Schedule {
   return {

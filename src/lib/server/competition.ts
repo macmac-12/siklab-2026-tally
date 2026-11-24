@@ -1,6 +1,12 @@
 import { type PoolClient } from "pg";
 import { type Command } from "./validation";
-import { requireAccess, fail, uid, audit } from "./store";
+import {
+  requireAccess,
+  requireScheduleManager,
+  fail,
+  uid,
+  audit,
+} from "./store";
 import {
   aggregateAwards,
   directAwards,
@@ -472,6 +478,7 @@ export async function saveSchedule(
   user: User,
   input: Extract<Command, { action: "schedule.save" }>["schedule"],
 ) {
+  requireScheduleManager(user);
   requireAccess(user, input.categoryId);
   const previous = input.id
     ? state.schedules.find((s) => s.id === input.id)

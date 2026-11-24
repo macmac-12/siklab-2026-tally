@@ -561,7 +561,7 @@ test("event reset preserves configuration and staff, removes competition history
   );
 });
 
-test("version 5 backup validates scoreless publications and certified college awards", async () => {
+test("version 6 backup validates scoreless publications and certified college awards", async () => {
   const fixture = (await command(
     admin,
     {
@@ -654,7 +654,7 @@ test("version 5 backup validates scoreless publications and certified college aw
     randomUUID(),
   );
   const backup = await exportBackup(admin);
-  assert.equal(backup.version, 5);
+  assert.equal(backup.version, 6);
   const restored = await restoreBackup(admin, { backup, preview: true });
   assert.equal(restored.ok, true);
   const badWinner = structuredClone(backup);

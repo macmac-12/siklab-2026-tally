@@ -32,7 +32,7 @@ await check("public catalog and projection retain privacy", async () => {
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.categories.length, 49);
-  assert.equal(data.disciplines.length, 48);
+  assert.equal(data.disciplines.length, 50);
   assert(data.entries.length >= 343);
   const json = JSON.stringify(data);
   for (const name of [

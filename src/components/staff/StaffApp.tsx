@@ -12,20 +12,28 @@ import {
   LayoutGrid,
   LockKeyhole,
   Music2,
+  Newspaper,
   RefreshCw,
   Settings2,
   ShieldCheck,
   Trophy,
   Users,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import CollegeIdentity from "../shared/CollegeIdentity";
-import type { Audit, AwardBody, StaffSnapshot, User } from "@/lib/model";
+import type {
+  Audit,
+  AwardBody,
+  Schedule,
+  StaffSnapshot,
+  User,
+} from "@/lib/model";
 import { categoryLabel } from "@/lib/catalog";
 import Brand from "../shared/Brand";
 import ThemeToggle from "../shared/ThemeToggle";
 import { dateLabel, scheduleTimeLabel } from "../shared/format";
-import { api } from "./client";
+import { api, type Run } from "./client";
 import ScheduleEditor from "./ScheduleEditor";
 import ResultEditor, { AwardEditor } from "./ResultEditor";
 import ReviewQueue, { Summary } from "./ReviewQueue";
@@ -51,6 +59,8 @@ const navigationIcons: Record<string, typeof Trophy> = {
   backup: ShieldCheck,
   password: LockKeyhole,
   tally: SlidersHorizontal,
+  published_results: Newspaper,
+  published_standings: Trophy,
 };
 const eventIcons = {
   Sports: Trophy,
@@ -71,6 +81,9 @@ function successLabel(body: unknown) {
     "account.save": "Account saved.",
     "category.configure": "Official rule version saved.",
     "discipline.configure": "Discipline inclusion updated.",
+    "discipline.create": "Inactive discipline added.",
+    "result.delete": "Result removed from publication.",
+    "schedule.delete": "Schedule permanently deleted.",
     "entry.add": "College entry added.",
     "tally.correct": "Official tally corrected.",
     "tally.set": "Official tally corrected.",
@@ -229,6 +242,139 @@ function HistoryPanel({ state }: { state: StaffSnapshot }) {
     </section>
   );
 }
+function DeleteCompetitionForm({
+  schedule,
+  type,
+  run,
+  busy,
+}: {
+  schedule: Schedule;
+  type: "result" | "schedule";
+  run: Run;
+  busy: boolean;
+}) {
+  const dialog = useStaffDialogClose();
+  return (
+    <StaffForm
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget),
+          reason = form.get("reason");
+        const ok = await run(
+          type === "result"
+            ? {
+                action: "result.delete",
+                scheduleId: schedule.id,
+                version: schedule.version,
+                publishedId: schedule.publishedId,
+                reason,
+                confirmed: true,
+              }
+            : {
+                action: "schedule.delete",
+                id: schedule.id,
+                version: schedule.version,
+                reason,
+                confirmed: true,
+              },
+        );
+        if (ok) dialog?.complete();
+      }}
+    >
+      <p>
+        {type === "result"
+          ? "The published result will disappear from public views. Its immutable revision and audit history will remain."
+          : "This permanently removes the schedule. It cannot be recovered from the workspace."}
+      </p>
+      <p>
+        <strong>{schedule.title}</strong>
+      </p>
+      <label>
+        Official reason
+        <textarea
+          className="resize-none"
+          name="reason"
+          required
+          minLength={10}
+          maxLength={2000}
+        />
+      </label>
+      <label className="check">
+        <input type="checkbox" required />I understand the stated consequence.
+      </label>
+      <button className="danger" disabled={busy}>
+        <Trash2 size={16} aria-hidden="true" />
+        {type === "result" ? "Delete result" : "Permanently delete schedule"}
+      </button>
+    </StaffForm>
+  );
+}
+
+function PublishedResults({
+  state,
+  categoryId,
+}: {
+  state: StaffSnapshot;
+  categoryId: string;
+}) {
+  const schedules = state.schedules.filter(
+    (schedule) =>
+      schedule.categoryId === categoryId && schedule.publishedId !== null,
+  );
+  return schedules.length ? (
+    <div className="compact-record-list">
+      {schedules.map((schedule) => {
+        const result = state.revisions.find(
+          (revision) => revision.id === schedule.publishedId,
+        );
+        return result ? (
+          <article className="compact-record" key={schedule.id}>
+            <div className="compact-record-main">
+              <h3>{schedule.title}</h3>
+              <p className="small muted">
+                {schedule.stage} · {dateLabel(schedule.date)} · {schedule.venue}
+              </p>
+              <Summary state={state} body={result.body} kind="result" />
+            </div>
+          </article>
+        ) : null;
+      })}
+    </div>
+  ) : (
+    <div className="panel empty">
+      <Newspaper size={24} aria-hidden="true" />
+      <h3>No published results yet.</h3>
+      <p>Published results for this event will appear here.</p>
+    </div>
+  );
+}
+
+function PublishedStandings({
+  state,
+  categoryId,
+}: {
+  state: StaffSnapshot;
+  categoryId: string;
+}) {
+  const award = state.revisions.find(
+    (revision) =>
+      revision.categoryId === categoryId &&
+      revision.kind === "award" &&
+      revision.status === "approved",
+  );
+  return award ? (
+    <section className="panel compact">
+      <h2>Published championship standings</h2>
+      <Summary state={state} body={award.body} kind="award" />
+    </section>
+  ) : (
+    <div className="panel empty">
+      <Trophy size={24} aria-hidden="true" />
+      <h3>No published standings yet.</h3>
+      <p>Official standings for this event will appear here.</p>
+    </div>
+  );
+}
 export default function StaffApp() {
   const [state, setState] = useState<StaffSnapshot | null>(null),
     [resetUser, setResetUser] = useState<User | null>(null),
@@ -241,7 +387,11 @@ export default function StaffApp() {
       id?: string;
     } | null>(null);
   const [bracketEditor, setBracketEditor] = useState(false),
-    [passwordEditor, setPasswordEditor] = useState(false);
+    [passwordEditor, setPasswordEditor] = useState(false),
+    [deleting, setDeleting] = useState<{
+      type: "result" | "schedule";
+      scheduleId: string;
+    } | null>(null);
   const keys = useRef(new Map<string, string>()),
     submitting = useRef(false);
   const load = useCallback(async () => {
@@ -257,6 +407,15 @@ export default function StaffApp() {
           : snapshot.categories[0]?.id || "",
       );
       setTab((current) => {
+        if (snapshot.mode === "public_relations")
+          return [
+            "schedules",
+            "published_results",
+            "published_standings",
+            "password",
+          ].includes(current)
+            ? current
+            : "schedules";
         if (
           snapshot.user.role === "officer" &&
           [
@@ -396,7 +555,10 @@ export default function StaffApp() {
         </main>
       </div>
     );
-  const admin = !!state && state.user.role !== "officer",
+  const readOnly = state?.mode === "public_relations",
+    admin =
+      !!state &&
+      (state.user.role === "admin" || state.user.role === "superadmin"),
     superadmin = state?.user.role === "superadmin";
   const schedules =
     state?.schedules.filter(
@@ -411,7 +573,14 @@ export default function StaffApp() {
   const calculatedAward =
     !!publishedAward &&
     (publishedAward.body as AwardBody).method !== "certified";
-  const tabs = [
+  const tabs = readOnly
+    ? [
+        ["schedules", "Schedules"],
+        ["published_results", "Published results"],
+        ["published_standings", "Published standings"],
+        ["password", "My password"],
+      ]
+    : [
     ...(admin ? [["tally", "Manage official tally"]] : []),
     ["events", "My events"],
     ["schedules", "Schedules"],
@@ -429,8 +598,8 @@ export default function StaffApp() {
           ["backup", "Backup & recovery"],
         ]
       : []),
-    ["password", "My password"],
-  ];
+        ["password", "My password"],
+      ];
   return (
     <div className="staff-app">
       <StaffToaster />
@@ -538,7 +707,13 @@ export default function StaffApp() {
             )
           ) : (
             <>
-              {["schedules", "awards", "rules"].includes(tab) ? (
+              {[
+                "schedules",
+                "awards",
+                "rules",
+                "published_results",
+                "published_standings",
+              ].includes(tab) ? (
                 <label className="event-picker">
                   Event category
                   <select
@@ -625,15 +800,16 @@ export default function StaffApp() {
               ) : null}
               {tab === "schedules" ? (
                 <div className="stack">
-                  <div className="actions staff-toolbar">
-                    <button
-                      className="primary"
-                      disabled={!category || busy || calculatedAward}
-                      onClick={() => openEditor({ type: "schedule" })}
-                    >
-                      + Schedule competition
-                    </button>
-                    {admin ? (
+                  {!readOnly ? (
+                    <div className="actions staff-toolbar">
+                      <button
+                        className="primary"
+                        disabled={!category || busy || calculatedAward}
+                        onClick={() => openEditor({ type: "schedule" })}
+                      >
+                        + Schedule competition
+                      </button>
+                      {admin ? (
                       <>
                         <button
                           disabled={!category || busy}
@@ -657,8 +833,14 @@ export default function StaffApp() {
                           onOpen={() => setError("")}
                         />
                       </>
-                    ) : null}
-                  </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="small muted">
+                      Public Relations access is read-only. Results shown here
+                      are limited to current publications.
+                    </p>
+                  )}
                   {publishedAward ? (
                     <p className="small muted">
                       {calculatedAward
@@ -675,7 +857,43 @@ export default function StaffApp() {
                       );
                       const published = state.revisions.find(
                         (revision) => revision.id === schedule.publishedId,
-                      );
+                      ),
+                        activeResult = state.revisions.find(
+                          (revision) =>
+                            revision.scheduleId === schedule.id &&
+                            ["draft", "pending", "approved"].includes(
+                              revision.status,
+                            ),
+                        ),
+                        resultHistory = state.revisions.some(
+                          (revision) => revision.scheduleId === schedule.id,
+                        ),
+                        following = state.schedules.some(
+                          (item) => item.followsId === schedule.id,
+                        ),
+                        bracketLinked = state.brackets.some((record) =>
+                          [record.draft, record.published].some((graph) =>
+                            graph?.nodes.some(
+                              (node) => node.fixtureId === schedule.id,
+                            ),
+                          ),
+                        ),
+                        calculatedDependency = state.revisions.some(
+                          (revision) =>
+                            revision.categoryId === schedule.categoryId &&
+                            revision.kind === "award" &&
+                            ["draft", "pending", "approved"].includes(
+                              revision.status,
+                            ) &&
+                            (revision.body as AwardBody).method !== "certified",
+                        ),
+                        deleteBlocker = resultHistory
+                          ? "Result history is retained; cancel this schedule instead."
+                          : following
+                            ? "Another competition follows this schedule."
+                            : bracketLinked
+                              ? "This schedule is linked to a bracket."
+                              : "";
                       return (
                         <article
                           className="compact-record schedule-staff-row"
@@ -726,17 +944,19 @@ export default function StaffApp() {
                             <span className={`status ${schedule.status}`}>
                               {schedule.status}
                             </span>
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                openEditor({
-                                  type: "schedule",
-                                  id: schedule.id,
-                                })
-                              }
-                            >
-                              Edit schedule
-                            </button>
+                            {!readOnly ? (
+                              <button
+                                disabled={busy}
+                                onClick={() =>
+                                  openEditor({
+                                    type: "schedule",
+                                    id: schedule.id,
+                                  })
+                                }
+                              >
+                                Edit schedule
+                              </button>
+                            ) : null}
                             {admin ? (
                               <>
                                 <button
@@ -766,6 +986,64 @@ export default function StaffApp() {
                                 />
                               </>
                             ) : null}
+                            {superadmin && activeResult ? (
+                              <button
+                                className="danger"
+                                disabled={busy || calculatedDependency}
+                                aria-describedby={
+                                  calculatedDependency
+                                    ? `result-delete-${schedule.id}`
+                                    : undefined
+                                }
+                                onClick={() =>
+                                  setDeleting({
+                                    type: "result",
+                                    scheduleId: schedule.id,
+                                  })
+                                }
+                              >
+                                <Trash2 size={16} aria-hidden="true" />
+                                Delete result
+                              </button>
+                            ) : null}
+                            {superadmin ? (
+                              <button
+                                className="danger"
+                                disabled={busy || !!deleteBlocker}
+                                aria-describedby={
+                                  deleteBlocker
+                                    ? `schedule-delete-${schedule.id}`
+                                    : undefined
+                                }
+                                onClick={() =>
+                                  setDeleting({
+                                    type: "schedule",
+                                    scheduleId: schedule.id,
+                                  })
+                                }
+                              >
+                                <Trash2 size={16} aria-hidden="true" />
+                                Delete schedule
+                              </button>
+                            ) : null}
+                            {superadmin &&
+                            calculatedDependency &&
+                            activeResult ? (
+                              <span
+                                className="small muted"
+                                id={`result-delete-${schedule.id}`}
+                              >
+                                A calculated championship depends on this result.
+                              </span>
+                            ) : null}
+                            {superadmin && deleteBlocker ? (
+                              <span
+                                className="small muted"
+                                id={`schedule-delete-${schedule.id}`}
+                              >
+                                {deleteBlocker}
+                              </span>
+                            ) : null}
                           </div>
                         </article>
                       );
@@ -778,6 +1056,12 @@ export default function StaffApp() {
                     </div>
                   ) : null}
                 </div>
+              ) : null}
+              {tab === "published_results" && readOnly ? (
+                <PublishedResults state={state} categoryId={category} />
+              ) : null}
+              {tab === "published_standings" && readOnly ? (
+                <PublishedStandings state={state} categoryId={category} />
               ) : null}
               {tab === "awards" && admin ? (
                 <AwardEditor
@@ -866,6 +1150,30 @@ export default function StaffApp() {
                     categoryId={category}
                     run={run}
                     close={() => setEditor(null)}
+                    busy={busy}
+                  />
+                </StaffDialog>
+              ) : null}
+              {deleting &&
+              state.schedules.find(
+                (schedule) => schedule.id === deleting.scheduleId,
+              ) ? (
+                <StaffDialog
+                  title={
+                    deleting.type === "result"
+                      ? "Delete published result"
+                      : "Permanently delete schedule"
+                  }
+                  busy={busy}
+                  error={error}
+                  onClose={() => setDeleting(null)}
+                >
+                  <DeleteCompetitionForm
+                    schedule={state.schedules.find(
+                      (schedule) => schedule.id === deleting.scheduleId,
+                    )!}
+                    type={deleting.type}
+                    run={run}
                     busy={busy}
                   />
                 </StaffDialog>

@@ -31,7 +31,8 @@ function AccountForm({
   busy,
 }: EditorProps & { user?: User }) {
   const dialog = useStaffDialogClose();
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false),
+    [role, setRole] = useState(user?.role || "officer");
   return (
     <StaffForm
       onSubmit={async (event) => {
@@ -74,12 +75,19 @@ function AccountForm({
         </label>
         <label>
           Role
-          <select name="role" defaultValue={user?.role || "officer"}>
+          <select
+            name="role"
+            value={role}
+            onChange={(event) => setRole(event.target.value as User["role"])}
+          >
             <option value="officer">
               Game staff · assigned schedules only
             </option>
             <option value="admin">
               Administrator · results, standings and event operations
+            </option>
+            <option value="public_relations">
+              Public Relations · read-only schedules and publications
             </option>
             <option value="superadmin">
               Superadministrator · accounts and recovery
@@ -121,8 +129,14 @@ function AccountForm({
         New and reset passwords must be changed at next sign-in. Disabling an
         account revokes its sessions.
       </p>
-      <fieldset>
+      <fieldset disabled={role === "public_relations"}>
         <legend>Assigned events (game staff)</legend>
+        {role === "public_relations" ? (
+          <p className="small muted">
+            Public Relations accounts view every schedule and published result
+            without event assignments.
+          </p>
+        ) : null}
         <div className="assignment-grid">
           {state.categories.map((category) => (
             <label className="check" key={category.id}>
@@ -190,7 +204,9 @@ export function AccountEditor({
                   ? "Game staff"
                   : user.role === "admin"
                     ? "Administrator"
-                    : "Superadministrator"}
+                    : user.role === "public_relations"
+                      ? "Public Relations"
+                      : "Superadministrator"}
               </p>
               <p className="small">
                 {user.active ? "Enabled" : "Disabled"}
@@ -432,6 +448,93 @@ function DisciplineForm({
     </StaffForm>
   );
 }
+function CreateDisciplineForm({
+  categoryId,
+  run,
+  busy,
+}: {
+  categoryId: string;
+  run: Run;
+  busy: boolean;
+}) {
+  const dialog = useStaffDialogClose();
+  return (
+    <StaffForm
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        if (
+          await run({
+            action: "discipline.create",
+            categoryId,
+            name: form.get("name"),
+            scheduleMode: form.get("scheduleMode"),
+            rule: {
+              podium: [
+                Number(form.get("first")),
+                Number(form.get("second")),
+                Number(form.get("third")),
+              ],
+              participation: Number(form.get("participation")),
+            },
+            reason: form.get("reason"),
+          })
+        )
+          dialog?.complete();
+      }}
+    >
+      <p className="small muted">
+        The new discipline starts inactive. Confirm its inclusion separately
+        after reviewing the scoring rule.
+      </p>
+      <div className="form-grid">
+        <label>
+          Discipline name
+          <input name="name" required maxLength={200} />
+        </label>
+        <label>
+          Schedule workflow
+          <select name="scheduleMode" defaultValue="standard">
+            <option value="standard">Standard discipline</option>
+            <option value="race">Timed track race</option>
+          </select>
+        </label>
+        {[
+          ["first", "First place", 5],
+          ["second", "Second place", 4],
+          ["third", "Third place", 3],
+          ["participation", "Participation", 1],
+        ].map(([name, label, value]) => (
+          <label key={String(name)}>
+            {label} points
+            <input
+              name={String(name)}
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              defaultValue={value}
+              required
+            />
+          </label>
+        ))}
+      </div>
+      <label>
+        Official source / reason
+        <textarea
+          className="resize-none"
+          name="reason"
+          required
+          minLength={10}
+          maxLength={2000}
+        />
+      </label>
+      <button disabled={busy} className="primary">
+        Add inactive discipline
+      </button>
+    </StaffForm>
+  );
+}
 export function RuleEditor({
   state,
   categoryId,
@@ -441,6 +544,7 @@ export function RuleEditor({
   onOpen,
 }: EditorProps & { categoryId: string }) {
   const [editing, setEditing] = useState(false),
+    [creatingDiscipline, setCreatingDiscipline] = useState(false),
     [discipline, setDiscipline] = useState<Discipline | null>(null);
   const category = state.categories.find((c) => c.id === categoryId);
   if (!category) return <p>Select an event.</p>;
@@ -475,6 +579,21 @@ export function RuleEditor({
           <span>Participation: {category.rule.participation} points</span>
         </div>
       </section>
+      {state.user.role === "superadmin" && category.aggregation === "subpoints" ? (
+        <div className="actions">
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => {
+              onOpen?.();
+              setCreatingDiscipline(true);
+            }}
+          >
+            <Plus size={16} />
+            Add discipline
+          </button>
+        </div>
+      ) : null}
       <div className="compact-record-list">
         {state.disciplines
           .filter((d) => d.categoryId === categoryId)
@@ -508,6 +627,21 @@ export function RuleEditor({
           onClose={() => setEditing(false)}
         >
           <RuleForm category={category} run={run} busy={busy} />
+        </StaffDialog>
+      ) : null}
+      {creatingDiscipline ? (
+        <StaffDialog
+          title="Add discipline"
+          description={categoryLabel(category)}
+          busy={busy}
+          error={error}
+          onClose={() => setCreatingDiscipline(false)}
+        >
+          <CreateDisciplineForm
+            categoryId={category.id}
+            run={run}
+            busy={busy}
+          />
         </StaffDialog>
       ) : null}
       {discipline ? (

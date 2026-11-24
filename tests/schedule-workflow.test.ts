@@ -11,7 +11,11 @@ import type {
   CollegePlacing,
   ResultBody,
 } from "../src/lib/model";
-import { command } from "../src/lib/server/actions";
+import {
+  command,
+  commandChangesPublicData,
+  staffState,
+} from "../src/lib/server/actions";
 import {
   pool,
   snapshot,
@@ -28,7 +32,12 @@ import { exportBackup, restoreBackup } from "../src/lib/server/backup";
 import { overall } from "../src/lib/scoring";
 import { totalsOnly } from "../src/lib/server/tally";
 
-let control: Pool, dbName: string, admin: User, staff: User, eventAdmin: User;
+let control: Pool,
+  dbName: string,
+  admin: User,
+  staff: User,
+  eventAdmin: User,
+  publicRelations: User;
 const password = randomBytes(24).toString("hex");
 const state = () => transaction(snapshot);
 const act = (input: unknown, user = eventAdmin, key = randomUUID()) =>
@@ -178,7 +187,9 @@ before(async () => {
   await pool().query("UPDATE accounts SET must_reset=false WHERE id=$1", [
     admin.id,
   ]);
-  const account = async (role: "admin" | "officer") => {
+  const account = async (
+    role: "admin" | "officer" | "public_relations",
+  ) => {
     const saved = (await act(
       {
         action: "account.save",
@@ -199,6 +210,7 @@ before(async () => {
   };
   eventAdmin = await account("admin");
   staff = await account("officer");
+  publicRelations = await account("public_relations");
 });
 after(async () => {
   await pool().end();
@@ -330,6 +342,195 @@ test("administrators directly publish optional-score decisions with idempotency 
       ),
     /stay completed|changed/,
   );
+});
+
+test("athletics catalog includes active Javelin and relays with explicit race modes", async () => {
+  const s = await state();
+  for (const categoryId of ["athletics-men", "athletics-women"]) {
+    const byName = new Map(
+      s.disciplines
+        .filter((discipline) => discipline.categoryId === categoryId)
+        .map((discipline) => [discipline.name, discipline]),
+    );
+    const javelin = byName.get("Javelin")!;
+    assert.equal(javelin.active, true);
+    assert.equal(javelin.scheduleMode, "standard");
+    assert.deepEqual(javelin.rule, {
+      podium: [5, 4, 3],
+      participation: 1,
+    });
+    for (const name of ["4x100m Relay", "4x400m Relay"]) {
+      const relay = byName.get(name)!;
+      assert.equal(relay.active, true);
+      assert.equal(relay.scheduleMode, "race");
+      assert.deepEqual(relay.rule, {
+        podium: [10, 8, 6],
+        participation: 2,
+      });
+    }
+    for (const name of [
+      "100m Dash",
+      "200m Dash",
+      "400m Run",
+      "800m Run",
+      "1500m Run",
+      "3000m Run",
+    ])
+      assert.equal(byName.get(name)?.scheduleMode, "race");
+  }
+});
+
+test("Public Relations is rollback-safe, sees only published projections and cannot issue staff commands", async () => {
+  const stored = (
+    await pool().query(
+      "SELECT role,access_scope FROM accounts WHERE id=$1",
+      [publicRelations.id],
+    )
+  ).rows[0];
+  assert.deepEqual(stored, {
+    role: "officer",
+    access_scope: "public_relations",
+  });
+  assert.deepEqual(publicRelations.assignments, []);
+  const unpublished = await schedule("volleyball-women", {}, eventAdmin);
+  await act(
+    {
+      action: "result.save",
+      scheduleId: unpublished.id,
+      body: {
+        ...emptyResult(),
+        decision: { kind: "winner", entryId: unpublished.entryIds[0] },
+      },
+      submit: false,
+      replacesId: null,
+      baseId: null,
+      reason: "",
+    },
+    eventAdmin,
+  );
+  const view = await staffState(publicRelations);
+  assert.equal("resetRequired" in view, false);
+  if ("resetRequired" in view) return;
+  assert.equal(view.mode, "public_relations");
+  const complete = await state();
+  assert.equal(view.categories.length, complete.categories.length);
+  assert.equal(view.schedules.length, complete.schedules.length);
+  assert.equal(view.users.length, 0);
+  assert.equal(view.audit.length, 0);
+  assert.equal(view.brackets.length, 0);
+  assert(!view.revisions.some((revision) => revision.status !== "approved"));
+  assert(
+    !view.revisions.some(
+      (revision) => revision.scheduleId === unpublished.id,
+    ),
+  );
+  assert(
+    view.revisions.every(
+      (revision) => !revision.reason && !revision.reviewNote,
+    ),
+  );
+  assert(view.schedules.every((item) => !item.reason));
+  await assert.rejects(
+    () =>
+      act(
+        {
+          action: "schedule.save",
+          schedule: editable(unpublished),
+        },
+        publicRelations,
+      ),
+    /read-only/,
+  );
+});
+
+test("only superadministrators create inactive disciplines and perform guarded audited deletion", async () => {
+  const name = `Test throw ${randomUUID().slice(0, 8)}`;
+  const create = {
+    action: "discipline.create",
+    categoryId: "athletics-women",
+    name,
+    scheduleMode: "standard",
+    rule: { podium: [5, 4, 3], participation: 1 },
+    reason: "Committee requested a future discipline for validation.",
+  };
+  await assert.rejects(() => act(create, eventAdmin), /superadministrator/);
+  const created = (await act(create, admin)) as { id: string };
+  const custom = (await state()).disciplines.find(
+    (discipline) => discipline.id === created.id,
+  )!;
+  assert.equal(custom.active, false);
+  assert.equal(custom.scheduleMode, "standard");
+
+  const removable = await schedule("table-tennis-women", {}, eventAdmin);
+  const deletion = {
+    action: "schedule.delete",
+    id: removable.id,
+    version: removable.version,
+    reason: "Duplicate schedule entered during release verification.",
+    confirmed: true,
+  };
+  await assert.rejects(() => act(deletion, eventAdmin), /superadministrator/);
+  await act(deletion, admin);
+  assert(!(await state()).schedules.some((item) => item.id === removable.id));
+
+  let published = await schedule("basketball-women", {}, eventAdmin);
+  await publishResult(published, {
+    ...emptyResult(),
+    decision: { kind: "winner", entryId: published.entryIds[0] },
+  });
+  published = (await state()).schedules.find(
+    (item) => item.id === published.id,
+  )!;
+  const removeResult = {
+    action: "result.delete",
+    scheduleId: published.id,
+    version: published.version,
+    publishedId: published.publishedId,
+    reason: "Published result was withdrawn by the tournament committee.",
+    confirmed: true,
+  };
+  await assert.rejects(
+    () => act(removeResult, eventAdmin),
+    /superadministrator/,
+  );
+  await act(removeResult, admin);
+  const after = await state();
+  assert.equal(
+    after.schedules.find((item) => item.id === published.id)?.publishedId,
+    null,
+  );
+  assert(
+    after.revisions
+      .filter((revision) => revision.scheduleId === published.id)
+      .every((revision) => revision.status === "superseded"),
+  );
+  assert(
+    !(await publicState(new URLSearchParams())).results.some(
+      (result) => result.scheduleId === published.id,
+    ),
+  );
+  await assert.rejects(
+    () =>
+      act(
+        {
+          action: "schedule.delete",
+          id: published.id,
+          version: after.schedules.find((item) => item.id === published.id)!
+            .version,
+          reason: "Attempt to delete a schedule with retained history.",
+          confirmed: true,
+        },
+        admin,
+      ),
+    /result history/,
+  );
+  const audits = await pool().query(
+    "SELECT action FROM audit WHERE entity_id=ANY($1::text[])",
+    [[removable.id, published.id]],
+  );
+  assert(audits.rows.some((row) => row.action === "schedule.deleted"));
+  assert(audits.rows.some((row) => row.action === "result.deleted"));
+  assert.equal(commandChangesPublicData(removeResult as never), true);
 });
 
 test("contradictory or partial scores and invalid winners fail; scoreless Chess draws remain valid", async () => {
@@ -550,7 +751,7 @@ test("safe metadata edits preserve legacy calculated source fingerprints and awa
   );
 });
 
-test("pre-result discipline changes persist and new fields round-trip in v5 without rewriting legacy bodies", async () => {
+test("pre-result discipline changes persist and new fields round-trip in v6 without rewriting legacy bodies", async () => {
   const s = await state(),
     disciplines = s.disciplines.filter(
       (item) => item.categoryId === "athletics-women" && item.active,
@@ -567,8 +768,30 @@ test("pre-result discipline changes persist and new fields round-trip in v5 with
   fixture = (await state()).schedules.find((item) => item.id === fixture.id)!;
   assert.equal(fixture.disciplineId, disciplines[1].id);
   const backup = await exportBackup(admin);
-  assert.equal(backup.version, 5);
+  assert.equal(backup.version, 6);
   await restoreBackup(admin, { backup, preview: true });
+  for (const version of [4, 5]) {
+    const legacy = structuredClone(backup);
+    legacy.version = version;
+    for (const account of legacy.tables.accounts) delete account.access_scope;
+    for (const discipline of legacy.tables.disciplines)
+      delete discipline.data.scheduleMode;
+    legacy.checksum = hash(JSON.stringify(legacy.tables));
+    assert.equal(
+      (await restoreBackup(admin, { backup: legacy, preview: true })).ok,
+      true,
+    );
+  }
+  const missingV6Metadata = structuredClone(backup);
+  delete missingV6Metadata.tables.accounts[0].access_scope;
+  missingV6Metadata.checksum = hash(
+    JSON.stringify(missingV6Metadata.tables),
+  );
+  await assert.rejects(
+    () =>
+      restoreBackup(admin, { backup: missingV6Metadata, preview: true }),
+    /access scopes/,
+  );
   const invalid = structuredClone(backup);
   invalid.tables.revisions.find(
     (row: { kind: string; status: string; body: AwardBody }) =>

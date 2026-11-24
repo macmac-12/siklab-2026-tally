@@ -17,6 +17,7 @@ import {
   canAccess,
   requireAccess,
   requireAdmin,
+  requireSuperadmin,
   fail,
   uid,
   hash,
@@ -33,6 +34,7 @@ import {
   saveSchedule,
   validateResult,
 } from "./competition";
+import { slug } from "../catalog";
 import type {
   User,
   Revision,
@@ -656,11 +658,7 @@ async function execute(
       return { id: r.id };
     }
     case "account.save": {
-      if (user.role !== "superadmin")
-        fail(
-          "Only the superadministrator can manage accounts and assignments.",
-          403,
-        );
+      requireSuperadmin(user);
       const before = command.id ? await userById(db, command.id) : null;
       if (command.id && !before) fail("Account not found.", 404);
       if (
@@ -675,13 +673,18 @@ async function execute(
         new Set(command.assignments).size !== command.assignments.length
       )
         fail("Invalid event assignments.");
+      if (command.role === "public_relations" && command.assignments.length)
+        fail("Public Relations accounts cannot have event assignments.");
       if (!before && !passwordHash)
         fail("Enter an initial password of at least 12 characters.");
-      const id = before?.id || uid();
+      const id = before?.id || uid(),
+        storedRole = command.role === "public_relations" ? "officer" : command.role,
+        accessScope =
+          command.role === "public_relations" ? "public_relations" : "standard";
       if (before) {
         await db.query(
-          "UPDATE accounts SET name=$2,email=$3,role=$4,active=$5 WHERE id=$1",
-          [id, command.name, command.email, command.role, command.active],
+          "UPDATE accounts SET name=$2,email=$3,role=$4,access_scope=$5,active=$6 WHERE id=$1",
+          [id, command.name, command.email, storedRole, accessScope, command.active],
         );
         if (passwordHash)
           await db.query(
@@ -690,12 +693,13 @@ async function execute(
           );
       } else
         await db.query(
-          "INSERT INTO accounts(id,name,email,role,active,password_hash,must_reset) VALUES($1,$2,$3,$4,$5,$6,true)",
+          "INSERT INTO accounts(id,name,email,role,access_scope,active,password_hash,must_reset) VALUES($1,$2,$3,$4,$5,$6,$7,true)",
           [
             id,
             command.name,
             command.email,
-            command.role,
+            storedRole,
+            accessScope,
             command.active,
             passwordHash,
           ],
@@ -706,7 +710,8 @@ async function execute(
       )
         await db.query("DELETE FROM sessions WHERE account_id=$1", [id]);
       await db.query("DELETE FROM assignments WHERE account_id=$1", [id]);
-      for (const categoryId of command.assignments)
+      for (const categoryId of
+        command.role === "public_relations" ? [] : command.assignments)
         await db.query(
           "INSERT INTO assignments(account_id,category_id) VALUES($1,$2)",
           [id, categoryId],
@@ -722,6 +727,52 @@ async function execute(
         passwordHash ? "Password reset; sessions revoked." : "",
       );
       return { id };
+    }
+    case "discipline.create": {
+      requireSuperadmin(user);
+      const category = findCategory(state, command.categoryId);
+      if (category.aggregation !== "subpoints")
+        fail("Disciplines can only be added to aggregate event categories.");
+      if (publicAward(state, category.id))
+        fail("The category is finalized. New disciplines are locked.");
+      const disciplineId = `${category.id}-${slug(command.name)}`;
+      if (disciplineId === `${category.id}-`)
+        fail("Enter a discipline name containing letters or numbers.");
+      if (
+        state.disciplines.some(
+          (discipline) =>
+            discipline.id === disciplineId ||
+            (discipline.categoryId === category.id &&
+              discipline.name.localeCompare(command.name, undefined, {
+                sensitivity: "base",
+              }) === 0),
+        )
+      )
+        fail("This discipline already exists.", 409);
+      const discipline = {
+        id: disciplineId,
+        categoryId: category.id,
+        name: command.name,
+        rule: command.rule,
+        scheduleMode: command.scheduleMode,
+        active: false,
+        reason: command.reason,
+        version: 1,
+      };
+      await db.query(
+        "INSERT INTO disciplines(id,category_id,data,version) VALUES($1,$2,$3,1)",
+        [discipline.id, discipline.categoryId, discipline],
+      );
+      await audit(
+        db,
+        user,
+        "discipline.created",
+        discipline.id,
+        null,
+        discipline,
+        command.reason,
+      );
+      return { id: discipline.id };
     }
     case "category.configure": {
       requireAdmin(user);
@@ -793,6 +844,101 @@ async function execute(
       );
       return { id: d.id };
     }
+    case "result.delete": {
+      requireSuperadmin(user);
+      const schedule =
+        state.schedules.find((item) => item.id === command.scheduleId) ||
+        fail("Schedule not found.", 404);
+      if (
+        schedule.version !== command.version ||
+        schedule.publishedId !== command.publishedId
+      )
+        fail("This schedule or result changed. Reload before deleting.", 409);
+      const resultRevisions = state.revisions.filter(
+        (revision) =>
+          revision.kind === "result" && revision.scheduleId === schedule.id,
+      );
+      const activeRevisions = resultRevisions.filter((revision) =>
+        ["draft", "pending", "approved"].includes(revision.status),
+      );
+      if (!activeRevisions.length)
+        fail("There is no current result to delete.", 409);
+      const dependentAward = state.revisions.find(
+        (revision) =>
+          revision.categoryId === schedule.categoryId &&
+          revision.kind === "award" &&
+          ["draft", "pending", "approved"].includes(revision.status) &&
+          (revision.body as AwardBody).method !== "certified",
+      );
+      if (dependentAward)
+        fail(
+          "A calculated championship depends on this result. Replace or remove that championship first.",
+          409,
+        );
+      await db.query(
+        "UPDATE revisions SET status='superseded' WHERE schedule_id=$1 AND kind='result' AND status IN ('draft','pending','approved')",
+        [schedule.id],
+      );
+      const updated = {
+        ...schedule,
+        publishedId: null,
+        version: schedule.version + 1,
+        scoringVersion: (schedule.scoringVersion ?? schedule.version) + 1,
+      };
+      await db.query(
+        "UPDATE schedules SET published_id=NULL,data=$2,version=version+1 WHERE id=$1",
+        [schedule.id, updated],
+      );
+      await audit(
+        db,
+        user,
+        "result.deleted",
+        schedule.id,
+        { schedule, revisions: activeRevisions },
+        { schedule: updated, revisions: [] },
+        command.reason,
+      );
+      return { id: schedule.id };
+    }
+    case "schedule.delete": {
+      requireSuperadmin(user);
+      const schedule =
+        state.schedules.find((item) => item.id === command.id) ||
+        fail("Schedule not found.", 404);
+      if (schedule.version !== command.version)
+        fail("This schedule changed. Reload before deleting.", 409);
+      if (state.revisions.some((revision) => revision.scheduleId === schedule.id))
+        fail(
+          "Schedules with result history cannot be permanently deleted. Cancel the schedule instead.",
+          409,
+        );
+      if (state.schedules.some((item) => item.followsId === schedule.id))
+        fail(
+          "Another competition follows this schedule. Update that competition first.",
+          409,
+        );
+      const linkedBracket = (await bracketRecords(db)).some((record) =>
+        [record.draft, record.published].some((graph) =>
+          graph?.nodes.some((node) => node.fixtureId === schedule.id),
+        ),
+      );
+      if (linkedBracket)
+        fail(
+          "This schedule is linked to a tournament bracket. Remove the bracket link first.",
+          409,
+        );
+      await db.query("DELETE FROM schedules WHERE id=$1", [schedule.id]);
+      await audit(
+        db,
+        user,
+        "schedule.deleted",
+        schedule.id,
+        schedule,
+        null,
+        command.reason,
+      );
+      return { id: schedule.id };
+    }
   }
 }
 export function commandChangesPublicData(command: Command) {
@@ -800,8 +946,11 @@ export function commandChangesPublicData(command: Command) {
     case "tally.correct":
     case "schedule.save":
     case "entry.add":
+    case "discipline.create":
     case "category.configure":
     case "discipline.configure":
+    case "result.delete":
+    case "schedule.delete":
       return true;
     case "bracket.save":
       // Republishing also changes its public publication timestamp.
@@ -832,6 +981,8 @@ export async function command(user: User, input: unknown, key: string) {
       if (!fresh?.active) fail("Account is disabled.", 401);
       if (fresh!.mustReset)
         fail("Change your temporary password before continuing.", 403);
+      if (fresh!.role === "public_relations")
+        fail("Public Relations accounts have read-only access.", 403);
       const prior = (
         await db.query(
           "SELECT * FROM idempotency WHERE actor_id=$1 AND key=$2",
@@ -865,6 +1016,73 @@ export async function staffState(user: User) {
     if (fresh!.mustReset) return { user: fresh, resetRequired: true };
     const s = await snapshot(db),
       visible = (id: string) => canAccess(fresh!, id);
+    if (fresh!.role === "public_relations") {
+      const publishedResultIds = new Set(
+        s.schedules.flatMap((schedule) =>
+          schedule.publishedId ? [schedule.publishedId] : [],
+        ),
+      );
+      const revisions = s.revisions
+        .filter(
+          (revision) =>
+            revision.status === "approved" &&
+            ((revision.kind === "result" &&
+              publishedResultIds.has(revision.id)) ||
+              revision.kind === "award"),
+        )
+        .map((revision) => ({
+          ...revision,
+          actorId: "",
+          reviewerId: null,
+          reason: "",
+          reviewNote: "",
+          body:
+            revision.kind === "result"
+              ? {
+                  scoreA: (revision.body as ResultBody).scoreA,
+                  scoreB: (revision.body as ResultBody).scoreB,
+                  outcome: (revision.body as ResultBody).outcome,
+                  ...((revision.body as ResultBody).decision
+                    ? { decision: (revision.body as ResultBody).decision }
+                    : {}),
+                  placings: (revision.body as ResultBody).placings,
+                  note: (revision.body as ResultBody).note,
+                  ruling: "",
+                }
+              : {
+                  rows: (revision.body as AwardBody).rows,
+                  source: "",
+                  ruleVersion: (revision.body as AwardBody).ruleVersion,
+                  ruling: "",
+                  ...((revision.body as AwardBody).method
+                    ? { method: (revision.body as AwardBody).method }
+                    : {}),
+                },
+        })) as Revision[];
+      return {
+        ...s,
+        mode: "public_relations" as const,
+        user: fresh,
+        users: [],
+        audit: [],
+        revisionActors: [],
+        brackets: [],
+        tallyAdjustments: await tallyAdjustments(db),
+        categories: s.categories.map((category) => ({
+          ...category,
+          source: "",
+        })),
+        disciplines: s.disciplines.map((discipline) => ({
+          ...discipline,
+          reason: "",
+        })),
+        schedules: s.schedules.map((schedule) => ({
+          ...schedule,
+          reason: "",
+        })),
+        revisions,
+      };
+    }
     const users: User[] = [];
     if (fresh!.role === "superadmin")
       for (const row of (
@@ -895,6 +1113,7 @@ export async function staffState(user: User) {
       : [];
     return {
       ...s,
+      mode: "staff" as const,
       brackets: (await bracketRecords(db)).filter((b) =>
         visible(b.draft.categoryId),
       ),

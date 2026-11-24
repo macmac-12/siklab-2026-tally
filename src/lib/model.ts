@@ -1,9 +1,14 @@
 import type { Category, Discipline, CollegeId } from "./catalog";
+export type UserRole =
+  | "superadmin"
+  | "admin"
+  | "officer"
+  | "public_relations";
 export type User = {
   id: string;
   name: string;
   email: string;
-  role: "superadmin" | "admin" | "officer";
+  role: UserRole;
   active: boolean;
   assignments: string[];
   mustReset: boolean;
@@ -125,6 +130,7 @@ export type Snapshot = {
   version: number;
 };
 export type StaffSnapshot = Snapshot & {
+  mode: "staff" | "public_relations";
   brackets: import("./brackets").BracketRecord[];
   user: User;
   users: User[];
